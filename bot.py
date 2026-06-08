@@ -223,6 +223,19 @@ def generate_cover_letter(job: dict, matched_skills: list) -> str:
             return ""
     except Exception as e:
         log.error(f"AI cover letter error: {e}")
+        # اطلاع‌رسانی به کاربر — فقط یکبار در هر اجرا (جلوگیری از spam)
+        if not _ai_error_notified["sent"]:
+            _ai_error_notified["sent"] = True
+            try:
+                err_msg = (
+                    "⚠️ <b>خطا در دریافت پاسخ از هوش مصنوعی</b>\n\n"
+                    "API ارائه‌دهنده سرور در حال حاضر پاسخ نمی‌دهد.\n"
+                    "مشکل از سمت سایت ارائه‌دهنده سرور هست.\n"
+                    "لطفاً چند ساعت دیگه مجدد تلاش کنید. 🙏"
+                )
+                send_telegram(err_msg)
+            except Exception:
+                pass  # حتی اگه ارسال پیام خطا هم فیل شد، ربات crash نکنه
         return ""
 
 
@@ -790,6 +803,9 @@ def send_telegram(text: str, reply_markup: dict = None, _retries: int = 3) -> bo
 
 # Telegraph token cache — یکبار ساخته میشه و بقیه استفاده می‌کنن
 _telegraph_token_cache = {"token": TELEGRAPH_TOKEN}
+
+# AI error notification flag — فقط یکبار در هر اجرا پیام خطا ارسال میشه
+_ai_error_notified = {"sent": False}
 
 
 def _get_telegraph_token() -> str:
