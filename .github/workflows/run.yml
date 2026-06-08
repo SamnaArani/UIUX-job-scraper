@@ -41,7 +41,6 @@ jobs:
           GSHEET_CREDENTIALS:  ${{ secrets.GSHEET_CREDENTIALS }}
           GSHEET_ID:           ${{ secrets.GSHEET_ID }}
           CF_WORKER_URL:       ${{ secrets.CF_WORKER_URL }}
-          CF_WORKER_SECRET:    ${{ secrets.CF_WORKER_SECRET }}
           AI_PROVIDER:         ${{ secrets.AI_PROVIDER }}
           AI_API_KEY:          ${{ secrets.AI_API_KEY }}
           AI_MODEL:            ${{ secrets.AI_MODEL }}
