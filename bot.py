@@ -86,8 +86,8 @@ SEARCH_QUERIES = [q for group in JSEARCH_QUERIES.values() for q in group]
 _DEFAULT_SKILLS = [
     "figma", "ui", "ux", "user experience", "user interface", "product design",
     "wordpress", "elementor", "web design", "interaction design", "wireframing",
-    "prototyping", "html", "css", "webflow", "divi", "landing page", "illustrator",
-    "photoshop", "responsive design", "mobile first"
+    "prototyping", "webflow", "divi", "landing page","photoshop",
+    "responsive design", "mobile first"
 ]
 _user_skills_env = os.environ.get("USER_SKILLS", "")
 MY_SKILLS = [s.strip().lower() for s in _user_skills_env.split(",") if s.strip()] if _user_skills_env else _DEFAULT_SKILLS
