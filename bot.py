@@ -79,7 +79,7 @@ MAX_JOBS_PER_RUN   = 20
 MIN_FIT_SCORE      = 35      # حداقل امتیاز تناسب برای ارسال آگهی
 MAX_JOB_AGE_DAYS   = 7       # حداکثر سن آگهی به روز
 
-TEST_MODE          = True    # False = واقعی | True = تست (جهت شبیه‌سازی زیبا در کنسول)
+TEST_MODE          = True    # True = شبیه‌سازی آفلاین و ارسال مستقیم خروجی‌ها به تلگرام برای تست استایل | False = حالت اسکرپ واقعی وب
 CHANNEL_USERNAME   = "@PIXEELLstudio"
 
 # هدرهای شبیه‌ساز مرورگر واقعی برای دور زدن سیستم‌های ضداسکرپ و کلودفلر
@@ -579,7 +579,8 @@ def send_telegram(text: str, reply_markup: str = None, thread_id: str = None) ->
             f"🔘 دکمه‌های پیوست شده:\n{reply_markup or 'بدون دکمه'}\n"
             f"{border}\n"
         )
-        return True
+        # در حالت تست مود هم می‌خواهیم پیام ارسال شود تا استایل و دیزاین را در تلگرام چک کنیم
+        # بنابراین بلافاصله return True نمی‌کنیم و اجازه می‌دهیم ریکوئست تلگرام فرستاده شود.
 
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         log.error("خطا: توکن ربات یا چت‌آیدی تلگرام تنظیم نشده است!")
@@ -738,14 +739,68 @@ def main():
     seen_jobs = load_seen_jobs()
     raw_jobs = []
 
-    # اجرای همزمان تمام متدهای اسکرپ با هدرهای مرورگر واقعی
-    raw_jobs.extend(fetch_remotive())
-    raw_jobs.extend(fetch_jobicy())
-    raw_jobs.extend(fetch_arbeitnow())
-    raw_jobs.extend(fetch_adzuna())
-    raw_jobs.extend(fetch_findwork())
-    raw_jobs.extend(fetch_cf_worker())
-    raw_jobs.extend(fetch_jsearch())
+    # در صورت فعال بودن حالت تست، موتورهای اسکرپ را اجرا نمی‌کنیم تا سهمیه API مصرف نشود
+    if TEST_MODE:
+        log.info("🧪 حالت تست فعال است. هیچ درخواستی به سایت‌های کاریابی ارسال نمی‌شود (سهمیه API حفظ می‌شود).")
+        log.info("⚡ ساخت داده‌های شبیه‌سازی شده (Mock Data) برای تست ارسال زنده به تلگرام...")
+        
+        if CATEGORY == "design":
+            raw_jobs = [
+                {
+                    "id": "mock-design-1",
+                    "title": "Senior UI/UX & Product Designer",
+                    "company": "Lemon.io",
+                    "description": "We are seeking a Product Designer skilled in Figma, UI Design, wireframing, and interaction design to build beautiful web apps.",
+                    "salary": "$90,000 - $120,000/yr",
+                    "remote": True,
+                    "url": "https://remotive.com/remote-jobs/product/staff-product-designer-sao-paulo-2091000",
+                    "source": "Remotive",
+                    "source_emoji": "🌐",
+                    "posted_at": datetime.now().strftime("%Y-%m-%d"),
+                    "location": "Worldwide (Remote)"
+                }
+            ]
+        elif CATEGORY == "dev":
+            raw_jobs = [
+                {
+                    "id": "mock-dev-1",
+                    "title": "WordPress & Front-End Developer",
+                    "company": "WebSparks Ltd",
+                    "description": "Looking for a mid-level web developer expert in WordPress, PHP, JavaScript, CSS/HTML, Elementor, and Tailwind CSS.",
+                    "salary": "$75,000/yr",
+                    "remote": True,
+                    "url": "https://jobicy.com/jobs/wordpress-developer",
+                    "source": "Jobicy",
+                    "source_emoji": "🟢",
+                    "posted_at": datetime.now().strftime("%Y-%m-%d"),
+                    "location": "Remote"
+                }
+            ]
+        else: # seo
+            raw_jobs = [
+                {
+                    "id": "mock-seo-1",
+                    "title": "Junior Technical SEO Specialist",
+                    "company": "SearchFlow Media",
+                    "description": "Seeking an expert in technical SEO, Screaming Frog, SEMrush, Google Analytics, search console, and custom Python scrapers.",
+                    "salary": "",
+                    "remote": True,
+                    "url": "https://arbeitnow.com/jobs/seo-specialist",
+                    "source": "Arbeitnow",
+                    "source_emoji": "🔷",
+                    "posted_at": datetime.now().strftime("%Y-%m-%d"),
+                    "location": "Remote"
+                }
+            ]
+    else:
+        # اجرای همزمان تمام متدهای اسکرپ با هدرهای مرورگر واقعی در حالت معمولی
+        raw_jobs.extend(fetch_remotive())
+        raw_jobs.extend(fetch_jobicy())
+        raw_jobs.extend(fetch_arbeitnow())
+        raw_jobs.extend(fetch_adzuna())
+        raw_jobs.extend(fetch_findwork())
+        raw_jobs.extend(fetch_cf_worker())
+        raw_jobs.extend(fetch_jsearch())
 
     qualified = []
     seen_in_current_run = set()
@@ -855,10 +910,11 @@ def main():
             log.error(f"خطا در پردازش آگهی {job.get('id')}: {e}")
             traceback.print_exc()
 
-    save_seen_jobs(seen_jobs)
-    
-    if sheet_rows:
-        save_to_gsheet(sheet_rows)
+    # در حالت تست، شناسه دیده‌شده‌های موقت را ذخیره نمی‌کنیم تا با هر بار ران مجدد در تست، پیام‌ها ارسال شوند
+    if not TEST_MODE:
+        save_seen_jobs(seen_jobs)
+        if sheet_rows:
+            save_to_gsheet(sheet_rows)
 
     log.info(f"پایان کار با موفقیت! تعداد ارسال‌های موفقیت‌آمیز امروز: {sent} آگهی.")
 
