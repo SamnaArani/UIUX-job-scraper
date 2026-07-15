@@ -1,14 +1,15 @@
 """
-UI/UX & WordPress Job Scraper Bot v5.2 - High Stability Customized for PIXEELLstudio
+UI/UX, Dev & SEO Multi-Topic Job Scraper Bot v5.5 - Premium Unified Edition
 ================================================================================
-تغییرات فوق پایدار و پیشرفته نسخه جدید اعمال شده:
-  • پیاده‌سازی موتور پیش‌کامپایل شده Regex با الگوهای مرز کلمه (\b) برای افزایش ۱۰ برابری سرعت و دقت
-  • سیستم وزن‌دهی پویا به کلمات کلیدی (BOOST_KEYWORDS) مخصوص حوزه طراحی و وردپرس
-  • سیستم خواندن مهارت‌های شخصی کاربر از Secrets گیت‌هاب (USER_SKILLS)
-  • افزودن هدرهای شبیه‌ساز مرورگر (User-Agent) به تمام متدها برای جلوگیری از بلاک شدن توسط Cloudflare
-  • بهبود فیلتر جغرافیایی با بررسی همزمان فیلد لوکیشن و توضیحات آگهی
-  • پارسر بهبودیافته زمان انتشار بر اساس پیکربندی MAX_JOB_AGE_DAYS
-  • حفظ دیتابیس قدیمی گوگل‌شیت (ذخیره عبارت ثابت "ChatGPT URL" به جای لینک زنده)
+امکانات فوق‌پیشرفته ادغام شده در این نسخه:
+  • معماری یکپارچه با ورودی داینامیک موضوعی (Design, Dev, SEO) از طریق سیستم Command Line
+  • تفکیک کاملاً مجزای فایل کش دیده‌شده‌ها (seen_jobs_[category].txt) جهت پیشگیری از تداخل
+  • نمودار بصری امتیاز تناسب (Score Bar - ██████░░░░) ادغام شده در پیام فارسی کارت جاب
+  • نمایش مهارت‌های انطباق‌یافته استخراج شده در کارت جاب تلگرام
+  • موتور پیش‌کامپایل شده الگوهای Regex با الگوهای مرز کلمه (\b) برای افزایش ۱۰ برابری سرعت و دقت
+  • فیلتر جغرافیایی سخت‌گیرانه برای لوکیشن و توضیحات به طور همزمان
+  • دکمه‌های شیشه‌ای دو ردیفه (Apply + ChatGPT Cover Letter شخصی‌سازی شده برای هر فیلد + کانال شما)
+  • ارسال خروجی‌های تفکیک شده به تاپیک‌های مجزا در سوپرگروه با پایداری حداکثری
 """
 
 import html
@@ -16,6 +17,7 @@ import json
 import logging
 import os
 import re
+import sys
 import time
 import traceback
 import urllib.parse
@@ -44,11 +46,26 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# ─── تشخیص پویا و آرگومان ورودی موضوع فعالیت ─────────────────────────────────
+# ورودی اول سیستم مشخص می‌کند فرآیند برای کدام دسته است: design | dev | seo (پیش‌فرض design)
+CATEGORY = sys.argv[1].lower() if len(sys.argv) > 1 else "design"
+log.info(f"🚀 ربات در فاز پردازش حوزه تخصصی آغاز به کار کرد: {CATEGORY.upper()}")
+
 # ─── Config ───────────────────────────────────────────────────────────────────
 RAPIDAPI_KEY       = os.environ.get("RAPIDAPI_KEY")
 TELEGRAM_TOKEN     = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID")
-TELEGRAM_TOPIC_ID  = os.environ.get("JOB_TOPIC_ID")
+
+# تخصیص هوشمند تاپیک مقصد تلگرام بر اساس فیلد کاری
+if CATEGORY == "design":
+    TELEGRAM_TOPIC_ID = os.environ.get("TOPIC_DESIGN") or os.environ.get("JOB_TOPIC_ID")
+elif CATEGORY == "dev":
+    TELEGRAM_TOPIC_ID = os.environ.get("TOPIC_DEV") or os.environ.get("JOB_TOPIC_ID")
+elif CATEGORY == "seo":
+    TELEGRAM_TOPIC_ID = os.environ.get("TOPIC_SEO") or os.environ.get("JOB_TOPIC_ID")
+else:
+    TELEGRAM_TOPIC_ID = os.environ.get("JOB_TOPIC_ID")
+
 GSHEET_CREDENTIALS = os.environ.get("GSHEET_CREDENTIALS", "")
 GSHEET_ID          = os.environ.get("GSHEET_ID", "")
 CF_WORKER_URL      = os.environ.get("CF_WORKER_URL")
@@ -56,13 +73,13 @@ ADZUNA_APP_ID      = os.environ.get("ADZUNA_APP_ID")
 ADZUNA_API_KEY     = os.environ.get("ADZUNA_API_KEY")
 FINDWORK_TOKEN     = os.environ.get("FINDWORK_TOKEN")
 
-SEEN_JOBS_FILE     = SCRIPT_DIR / "seen_jobs.txt"
+SEEN_JOBS_FILE     = SCRIPT_DIR / f"seen_jobs_{CATEGORY}.txt" # فایل کش جداگانه برای هر حوزه
 MAX_SEEN_JOBS      = 3000
 MAX_JOBS_PER_RUN   = 20
 MIN_FIT_SCORE      = 35      # حداقل امتیاز تناسب برای ارسال آگهی
 MAX_JOB_AGE_DAYS   = 7       # حداکثر سن آگهی به روز
 
-TEST_MODE          = False   # False = واقعی | True = تست
+TEST_MODE          = True   # False = واقعی | True = تست
 CHANNEL_USERNAME   = "@PIXEELLstudio"
 
 # هدرهای شبیه‌ساز مرورگر واقعی برای دور زدن سیستم‌های ضداسکرپ و کلودفلر
@@ -72,62 +89,105 @@ DEFAULT_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9,fa;q=0.8"
 }
 
-# ─── ساختار گروهی کوئری‌های طراحی و توسعه وردپرس (کاهش مصرف ریکوئست‌ها) ──────
-JSEARCH_QUERIES = {
+# ─── تخصیص پویای کیوردها، بلک‌لیست‌ها و سیستم امتیازدهی هوشمند ──────────────
+
+# ۱. تعریف کوئری‌های JSearch به تفکیک و چرخشی برای مدیریت بهینه اعتبار
+DESIGN_QUERIES = {
     1: ["UI UX Designer remote", "Product Designer remote", "Figma Designer remote"],
-    2: ["WordPress Developer remote", "WordPress Designer remote", "Elementor remote"],
-    3: ["Web Designer remote", "Front End Designer remote"]
+    2: ["WordPress Designer remote", "Elementor remote", "Web Designer remote"],
+    3: ["Front End Designer remote"]
 }
 
-# استخراج مسطح کوئری‌ها برای منابعی که ساختار گروهی نمی‌خواهند
-SEARCH_QUERIES = [q for group in JSEARCH_QUERIES.values() for q in group]
+DEV_QUERIES = {
+    1: ["WordPress Developer remote", "Front End Developer remote", "PHP Developer remote"],
+    2: ["React Developer remote", "Webflow Developer remote", "Shopify Developer remote"],
+    3: ["Full Stack Developer remote", "JavaScript Developer remote"]
+}
 
-# ─── مهارت‌های پیش‌فرض و پویای طراح و توسعه‌دهنده ───────────────────────────
-_DEFAULT_SKILLS = [
+SEO_QUERIES = {
+    1: ["Junior SEO remote", "Technical SEO remote", "SEO Python remote"],
+    2: ["SEO Content Editor remote", "WordPress SEO Specialist remote"],
+    3: ["on-page SEO specialist remote", "SEO copywriter remote"]
+}
+
+# ۲. مهارت‌های پیش‌فرض هر رشته
+DESIGN_SKILLS = [
     "figma", "ui", "ux", "user experience", "user interface", "product design",
     "wordpress", "elementor", "web design", "interaction design", "wireframing",
-    "prototyping", "webflow", "divi", "landing page","photoshop",
-    "responsive design", "mobile first"
+    "prototyping", "html", "css", "webflow", "divi", "landing page", "illustrator",
+    "photoshop", "responsive design"
 ]
-_user_skills_env = os.environ.get("USER_SKILLS", "")
-MY_SKILLS = [s.strip().lower() for s in _user_skills_env.split(",") if s.strip()] if _user_skills_env else _DEFAULT_SKILLS
 
-# ─── کلمات کلیدی بلک‌لیست حوزه طراحی و جغرافیا ──────────────────────────────
-BLACKLIST_KEYWORDS = [
+DEV_SKILLS = [
+    "wordpress", "php", "javascript", "react", "html", "css", "webflow", "shopify",
+    "elementor", "divi", "git", "api", "node.js", "bootstrap", "tailwind", "mysql", "jquery"
+]
+
+SEO_SKILLS = [
+    "python", "wordpress", "technical seo", "on-page seo", "screaming frog", "ahrefs",
+    "semrush", "google analytics", "google search console", "content", "keyword research",
+    "html", "cms", "link building", "schema"
+]
+
+# ۳. کلمات کلیدی بلک‌لیست عمومی جغرافیایی و کاری
+GEO_BLACKLIST = [
     "us residents only", "must reside in us", "must be located in us",
     "must be based in the us", "must be based in us",
     "must be authorized to work in the us", "citizens only",
-    "senior designer", "lead designer", "design director", "head of design",
-    "seo specialist", "link building", "sem", "native english speaker only",
-    "10+ years", "8+ years", "7+ years", "director of"
+    "native english speaker only", "10+ years", "8+ years", "7+ years"
 ]
 
-# ─── سیستم وزن‌دهی فوق‌پیشرفته و دقیق امتیازات طراحی و توسعه ────────────────
-BOOST_KEYWORDS = {
-    "figma": 20,
-    "ui": 15,
-    "ux": 15,
-    "product designer": 18,
-    "wordpress": 15,
-    "elementor": 12,
-    "web design": 10,
-    "junior": 18,
-    "entry level": 15,
-    "associate": 12,
-    "part-time": 8,
-    "contract": 5,
-    "remote-first": 8,
-    "async": 5,
-    "flexible": 4,
-    "webflow": 12,
-    "wireframing": 8,
-    "prototyping": 8
+DESIGN_BLACKLIST = GEO_BLACKLIST + ["senior designer", "lead designer", "design director", "head of design", "seo specialist", "link building"]
+DEV_BLACKLIST    = GEO_BLACKLIST + ["senior developer", "lead developer", "cto", "tech lead", "architect"]
+SEO_BLACKLIST    = GEO_BLACKLIST + ["senior seo", "head of seo", "director of seo"]
+
+# ۴. ضرایب و وزن کلمات ارزشمند هر حوزه
+DESIGN_BOOST = {
+    "figma": 20, "ui": 15, "ux": 15, "product designer": 18, "wordpress": 15,
+    "elementor": 12, "web design": 10, "junior": 18, "entry level": 15, "associate": 12,
+    "part-time": 8, "contract": 5, "webflow": 12, "wireframing": 8, "prototyping": 8
 }
 
-# ─── پیش‌کامپایل الگوهای رگولار اکسپرشن در سطح ماژول (افزایش سرعت پردازش) ───
+DEV_BOOST = {
+    "wordpress": 20, "react": 18, "php": 15, "webflow": 15, "javascript": 12,
+    "html": 10, "css": 10, "junior": 18, "entry level": 15, "associate": 12,
+    "part-time": 8, "contract": 5, "node.js": 12, "tailwind": 8, "api": 8
+}
+
+SEO_BOOST = {
+    "technical seo": 20, "python": 18, "wordpress": 15, "junior": 18, "entry level": 15,
+    "seo specialist": 12, "seo editor": 12, "content editor": 10, "on-page": 10,
+    "part-time": 8, "contract": 5, "screaming frog": 12, "ahrefs": 10, "semrush": 10
+}
+
+# اعمال پیکربندی‌های پویا بر اساس حوزه انتخاب شده در ران تایم
+if CATEGORY == "design":
+    JSEARCH_QUERIES = DESIGN_QUERIES
+    _DEFAULT_SKILLS = DESIGN_SKILLS
+    BLACKLIST_KEYWORDS = DESIGN_BLACKLIST
+    BOOST_KEYWORDS = DESIGN_BOOST
+elif CATEGORY == "dev":
+    JSEARCH_QUERIES = DEV_QUERIES
+    _DEFAULT_SKILLS = DEV_SKILLS
+    BLACKLIST_KEYWORDS = DEV_BLACKLIST
+    BOOST_KEYWORDS = DEV_BOOST
+else:  # seo
+    JSEARCH_QUERIES = SEO_QUERIES
+    _DEFAULT_SKILLS = SEO_SKILLS
+    BLACKLIST_KEYWORDS = SEO_BLACKLIST
+    BOOST_KEYWORDS = SEO_BOOST
+
+# استخراج مسطح کوئری‌ها برای سایر ابزارها
+SEARCH_QUERIES = [q for group in JSEARCH_QUERIES.values() for q in group]
+
+# خواندن مهارت‌های شخصی کاربر از گیت‌هاب سکرت در صورت تعریف شدن
+_user_skills_env = os.environ.get("USER_SKILLS", "")
+MY_SKILLS = [s.strip().lower() for s in _user_skills_env.split(",") if s.strip()] if _user_skills_env else _DEFAULT_SKILLS
+
+# ─── پیش‌کامپایل موتور رگولار اکسپرشن (Regex Engine) ─────────────────────────
 _SKILL_PATTERNS    = {s: re.compile(r"\b" + re.escape(s) + r"\b", re.I) for s in MY_SKILLS}
 _BOOST_PATTERNS    = {kw: re.compile(r"\b" + re.escape(kw) + r"\b", re.I) for kw in BOOST_KEYWORDS}
-_BLACKLIST_PATTERNS = {kw: re.compile(r"\b" + re.escape(kw.lower()) + r"\b", re.I) for kw in BLACK_KEYWORDS}
+_BLACKLIST_PATTERNS = {kw: re.compile(r"\b" + re.escape(kw.lower()) + r"\b", re.I) for kw in BLACKLIST_KEYWORDS}
 
 # ─── Helper Functions ─────────────────────────────────────────────────────────
 
@@ -178,6 +238,8 @@ def generate_hashtags(job_title: str) -> str:
         tags.append("#Product_Design")
     if "developer" in t or "web" in t:
         tags.append("#Web_Development")
+    if "seo" in t or "سئو" in t:
+        tags.append("#SEO")
     if "remote" in t or "دورکاری" in t:
         tags.append("#Remote")
     return " ".join(tags)
@@ -212,9 +274,6 @@ def evaluate_job(job: dict) -> tuple[int, list[str]]:
     location = str(job.get("location") or "").lower()
     combined_text = f"{title} {desc} {location}"
     
-    score = 10  # امتیاز پایه برای شروع فرآیند مهارت‌سنجی
-    matched_skills = []
-
     # ۱. فیلتر بلک‌لیست با Regex کامپایل شده (دقت ۱۰۰٪ با شناسایی مرز کلمات)
     for kw, pattern in _BLACKLIST_PATTERNS.items():
         if pattern.search(combined_text):
@@ -226,10 +285,14 @@ def evaluate_job(job: dict) -> tuple[int, list[str]]:
         if "worldwide" not in desc and "anywhere" not in desc:
             return -999, []
 
+    score = 10  # امتیاز پایه برای شروع فرآیند مهارت‌سنجی
+    matched_skills = []
+
     # ۳. شناسایی مهارت‌های اختصاصی کاربر
     for skill, pattern in _SKILL_PATTERNS.items():
         if pattern.search(combined_text):
             matched_skills.append(skill.upper())
+            score += 7  # به ازای انطباق هر تخصص فنی ۷ امتیاز اضافه می‌شود
 
     # ۴. سیستم امتیازدهی وزن‌دار بر اساس BOOST_KEYWORDS
     for kw, pattern in _BOOST_PATTERNS.items():
@@ -244,7 +307,7 @@ def evaluate_job(job: dict) -> tuple[int, list[str]]:
     if "hour" in posted_at or "minute" in posted_at or "today" in posted_at.lower():
         score += 10
 
-    return score, matched_skills
+    return min(score, 100), matched_skills[:5]
 
 def is_old_job(job: dict) -> bool:
     """تشخیص پویای آگهی‌های قدیمی بر اساس واژه‌های متداول انگلیسی و پیکربندی MAX_JOB_AGE_DAYS"""
@@ -267,7 +330,8 @@ def is_old_job(job: dict) -> bool:
 
 def fetch_remotive() -> list[dict]:
     log.info("درحال دریافت داده از Remotive...")
-    url = "https://remotive.com/api/remote-jobs?category=design"
+    category_param = "seo" if CATEGORY == "seo" else "design" if CATEGORY == "design" else "software-development"
+    url = f"https://remotive.com/api/remote-jobs?category={category_param}"
     try:
         r = requests.get(url, headers=DEFAULT_HEADERS, timeout=15)
         if r.status_code == 200:
@@ -292,7 +356,8 @@ def fetch_remotive() -> list[dict]:
 
 def fetch_jobicy() -> list[dict]:
     log.info("درحال دریافت داده از Jobicy...")
-    url = "https://jobicy.com/api/v2/remote-jobs?count=50&industry=design"
+    industry_param = "seo" if CATEGORY == "seo" else "design" if CATEGORY == "design" else "dev"
+    url = f"https://jobicy.com/api/v2/remote-jobs?count=50&industry={industry_param}"
     try:
         r = requests.get(url, headers=DEFAULT_HEADERS, timeout=15)
         if r.status_code == 200:
@@ -325,7 +390,11 @@ def fetch_arbeitnow() -> list[dict]:
             jobs = []
             for j in data.get("data", []):
                 title = j.get("title", "").lower()
-                if not any(w in title for w in ["design", "ux", "ui", "wordpress"]):
+                # غربالگری هوشمند متناسب با فیلد ران تایم
+                match_words = ["design", "ux", "ui", "wordpress"] if CATEGORY != "seo" else ["seo", "marketing"]
+                if CATEGORY == "dev":
+                    match_words += ["developer", "react", "php", "javascript"]
+                if not any(w in title for w in match_words):
                     continue
                 jobs.append({
                     "id": f"arbeitnow-{j.get('slug')}",
@@ -348,11 +417,12 @@ def fetch_adzuna() -> list[dict]:
         return []
     log.info("درحال دریافت داده از Adzuna...")
     url = "https://api.adzuna.com/v1/api/jobs/us/search/1"
+    search_term = "UI UX Designer remote" if CATEGORY == "design" else "WordPress Developer remote" if CATEGORY == "dev" else "SEO remote"
     params = {
         "app_id": ADZUNA_APP_ID,
         "app_key": ADZUNA_API_KEY,
         "results_per_page": 30,
-        "what": "UI UX Designer remote",
+        "what": search_term,
         "content-type": "application/json"
     }
     try:
@@ -386,7 +456,8 @@ def fetch_findwork() -> list[dict]:
         "Authorization": f"Token {FINDWORK_TOKEN}",
         "User-Agent": DEFAULT_HEADERS["User-Agent"]
     }
-    params = {"search": "UI UX", "remote": "true"}
+    search_term = "UI UX" if CATEGORY == "design" else "WordPress" if CATEGORY == "dev" else "SEO"
+    params = {"search": search_term, "remote": "true"}
     try:
         r = requests.get(url, headers=headers, params=params, timeout=15)
         if r.status_code == 200:
@@ -420,7 +491,10 @@ def fetch_cf_worker() -> list[dict]:
             jobs = []
             for j in data.get("jobs", []):
                 title = j.get("title", "").lower()
-                if not any(w in title for w in ["design", "ux", "ui", "wordpress"]):
+                match_words = ["design", "ux", "ui", "wordpress"] if CATEGORY != "seo" else ["seo", "marketing"]
+                if CATEGORY == "dev":
+                    match_words += ["developer", "react", "php", "javascript"]
+                if not any(w in title for w in match_words):
                     continue
                 jobs.append({
                     "id": j.get("id"),
@@ -506,7 +580,7 @@ def send_telegram(text: str, reply_markup: str = None, thread_id: str = None) ->
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
         "parse_mode": "HTML",
-        "disable_web_page_preview": True
+        "link_preview_options": {"is_disabled": True}, # هندلینگ امن پیش‌نمایش لینک در تلگرام
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
@@ -536,7 +610,13 @@ def send_telegram(text: str, reply_markup: str = None, thread_id: str = None) ->
 
 # ─── Formatting / Buttons ────────────────────────────────────────────────────
 
+def _score_bar(score: int) -> str:
+    """نمودار میله‌ای بصری و جذاب امتیاز تناسب آگهی"""
+    filled = round(score / 10)
+    return "█" * filled + "░" * (10 - filled)
+
 def format_job(job: dict, score: int, skills: list) -> str:
+    """قالب‌بندی فارسی کارت‌های جاب، به همراه نمودار امتیاز و فهرست مهارت‌های منطبق"""
     title = html.escape(job.get("title") or "بدون عنوان")
     company = html.escape(job.get("company") or "نامشخص")
     location = html.escape(job.get("location") or "Remote")
@@ -544,7 +624,7 @@ def format_job(job: dict, score: int, skills: list) -> str:
     salary = extract_salary(job)
     
     salary_line = f"💰 <b>حقوق: {html.escape(salary)}</b>" if salary else ""
-    skills_line = f"⚡️ مهارت‌ها: <code>{', '.join(skills)}</code>" if skills else ""
+    score_bar = _score_bar(score)
     
     lines = [
         f"💼 <b>{title}</b>",
@@ -553,13 +633,19 @@ def format_job(job: dict, score: int, skills: list) -> str:
     ]
     if salary_line:
         lines.append(salary_line)
-    if skills_line:
-        lines.append(skills_line)
+        
+    # اضافه شدن نمودار امتیاز تناسب
+    lines.append(f"📊 {score_bar} <b>{score}/100</b>")
+    
+    # اضافه شدن لیست تخصص‌های انطباق‌یافته شما
+    if skills:
+        lines.append(f"✅ تخصص‌های منطبق: <code>{', '.join(skills)}</code>")
         
     lines.append(f"🌐 منبع: {source}")
     return "\n".join(lines)
 
 def build_job_buttons(job: dict) -> tuple[str, str]:
+    """ساخت دکمه‌های شیشه‌ای دو ردیفه متناسب با پرامپت اختصاصی هر حوزه"""
     link = job.get("url") or ""
     title = job.get("title") or "Position"
     company = job.get("company") or "Company"
@@ -578,12 +664,20 @@ def build_job_buttons(job: dict) -> tuple[str, str]:
         prompt_tpl = ""
 
     if not prompt_tpl:
-        prompt_tpl = (
-            "Write a professional, concise cover letter for the '{title}' position at '{company}'.\n"
-            "Focus on my UI/UX Design and web development skills.\n\n"
-            "Job link: {url}\n\n"
-            "Keep it under 250 words, be targeted to the job requirements, and end with a call to action."
-        )
+        if CATEGORY == "seo":
+            prompt_tpl = (
+                "Write a professional, concise cover letter for the '{title}' position at '{company}'.\n"
+                "Focus on my technical SEO skills and analytical tools.\n\n"
+                "Job link: {url}\n\n"
+                "Keep it under 250 words, be targeted to the job requirements, and end with a call to action."
+            )
+        else:
+            prompt_tpl = (
+                "Write a professional, concise cover letter for the '{title}' position at '{company}'.\n"
+                "Focus on my UI/UX Design, frontend styling, and web development skills.\n\n"
+                "Job link: {url}\n\n"
+                "Keep it under 250 words, be targeted to the job requirements, and end with a call to action."
+            )
 
     try:
         prompt_text = prompt_tpl.format(title=title, company=company, url=link)
@@ -595,7 +689,7 @@ def build_job_buttons(job: dict) -> tuple[str, str]:
     
     keyboard = {"inline_keyboard": [
         [
-            {"text": "🔗 Apply / مشاهده آگهی", "url": link},
+            {"text": "🔗 Apply Now / مشاهده آگهی", "url": link},
             {"text": "🤖 ChatGPT Cover Letter", "url": chatgpt_url}
         ],
         [
@@ -615,7 +709,12 @@ def save_to_gsheet(rows: list):
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
         
-        sheet = client.open_by_key(GSHEET_ID).sheet1
+        # تلاش برای ذخیره‌سازی در تبی با نام حوزه مربوطه برای آرشیو تمیزتر (مثلاً تبی به نام Design)
+        try:
+            sheet = client.open_by_key(GSHEET_ID).worksheet(CATEGORY.capitalize())
+        except Exception:
+            sheet = client.open_by_key(GSHEET_ID).sheet1
+            
         sheet.append_rows(rows, value_input_option="USER_ENTERED")
         log.info(f"تعداد {len(rows)} آگهی با موفقیت در Google Sheets ذخیره شد.")
     except Exception as e:
@@ -624,7 +723,7 @@ def save_to_gsheet(rows: list):
 # ─── Main Executor ────────────────────────────────────────────────────────────
 
 def main():
-    log.info("شروع اسکرپ آگهی‌های شغلی طراحی و وردپرس با پایداری حداکثری...")
+    log.info(f"شروع اسکرپ آگهی‌های شغلی حوزه {CATEGORY.upper()} با پایداری حداکثری...")
     
     seen_jobs = load_seen_jobs()
     raw_jobs = []
@@ -686,7 +785,7 @@ def main():
     if not qualified:
         log.info("آگهی جدیدی در این دور یافت نشد.")
         send_telegram(
-            f"🔍 <b>بررسی آگهی‌های روزانه PIXEELLstudio</b>\n"
+            f"🔍 <b>بررسی آگهی‌های روزانه PIXEELLstudio ({CATEGORY.upper()})</b>\n"
             f"📅 {now}\n\n"
             f"❌ آگهی جدید و واجد شرایط پیدا نشد.\n"
             f"⛔️ {stats['blacklisted']} آگهی نامرتبط فیلتر شدند.\n"
@@ -696,9 +795,9 @@ def main():
         save_seen_jobs(seen_jobs)
         return
 
-    # ارسال هدر روزانه با آمار کاملاً واقعی
+    # ارسال هدر روزانه با آمار کاملاً واقعی و موضوع فعالیت
     send_telegram(
-        f"🔍 <b>فرصت‌های شغلی بین‌المللی امروز</b>\n"
+        f"🔍 <b>فرصت‌های شغلی بین‌المللی امروز ({CATEGORY.upper()})</b>\n"
         f"📅 {now}\n"
         f"📊 <b>{len(qualified)}</b> آگهی جدید پیدا شد | ⛔️ {stats['blacklisted']} فیلتر شد\n"
         f"➖➖➖➖➖➖➖➖\n"
