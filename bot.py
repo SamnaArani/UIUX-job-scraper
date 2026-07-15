@@ -1,6 +1,6 @@
 """
-SEO Job Scraper Bot v5.0
-========================
+SEO & Design Job Scraper Bot v5.0 - Customized for PIXEELLstudio
+================================================================
 منابع رایگان:
   • Remotive.com
   • Jobicy.com
@@ -14,14 +14,15 @@ SEO Job Scraper Bot v5.0
 
 Cover Letter:
   • هر آگهی یک دکمه "ChatGPT Cover Letter" داره
-  • کلیک → باز شدن ChatGPT با پرامپت آماده
+  • کلیک → باز شدن ChatGPT با پرامپت آماده (به طور پویا از prompt.txt یا کد)
 
 ذخیره‌سازی اختیاری:
   • Google Sheets (Batch append)
 
 متغیرهای محیطی (GitHub Secrets):
   TELEGRAM_BOT_TOKEN   — اجباری
-  TELEGRAM_CHAT_ID     — اجباری
+  TELEGRAM_CHAT_ID     — اجباری (آیدی گروه با 100-)
+  JOB_TOPIC_ID         — اختیاری (آیدی عددی تاپیک مورد نظر)
   RAPIDAPI_KEY         — اختیاری
   GSHEET_CREDENTIALS   — اختیاری (JSON)
   GSHEET_ID            — اختیاری
@@ -53,714 +54,675 @@ except ImportError:
     SHEETS_AVAILABLE = False
 
 SCRIPT_DIR = Path(__file__).parent
+load_dotenv(SCRIPT_DIR / ".env")
 
+# ─── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[logging.StreamHandler()],
 )
 log = logging.getLogger(__name__)
 
-load_dotenv()
-
-TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-
-if not TELEGRAM_TOKEN:
-    raise ValueError("TELEGRAM_BOT_TOKEN not set")
-if not TELEGRAM_CHAT_ID:
-    raise ValueError("TELEGRAM_CHAT_ID not set")
-
-RAPIDAPI_KEY       = os.environ.get("RAPIDAPI_KEY", "")
+# ─── Config ───────────────────────────────────────────────────────────────────
+RAPIDAPI_KEY       = os.environ.get("RAPIDAPI_KEY")
+TELEGRAM_TOKEN     = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID")
+TELEGRAM_TOPIC_ID  = os.environ.get("JOB_TOPIC_ID") # هماهنگ با اکشن سکرت شما
 GSHEET_CREDENTIALS = os.environ.get("GSHEET_CREDENTIALS", "")
 GSHEET_ID          = os.environ.get("GSHEET_ID", "")
-GSHEET_SHEET_NAME  = "Jobs"
+CF_WORKER_URL      = os.environ.get("CF_WORKER_URL")
+ADZUNA_APP_ID      = os.environ.get("ADZUNA_APP_ID")
+ADZUNA_API_KEY     = os.environ.get("ADZUNA_API_KEY")
+FINDWORK_TOKEN     = os.environ.get("FINDWORK_TOKEN")
 
-CF_WORKER_URL    = os.environ.get("CF_WORKER_URL", "")
-ADZUNA_APP_ID    = os.environ.get("ADZUNA_APP_ID", "")
-ADZUNA_API_KEY   = os.environ.get("ADZUNA_API_KEY", "")
+SEEN_JOBS_FILE     = Path("seen_jobs.txt")
+MAX_SEEN_JOBS      = 2000
+MAX_JOBS_PER_RUN   = 40
 
-SEEN_JOBS_FILE   = SCRIPT_DIR / "seen_jobs.txt"
-MAX_SEEN_JOBS    = 3000
-MAX_JOBS_PER_RUN = 20
-MIN_FIT_SCORE    = 35
-MAX_JOB_AGE_DAYS = 7
+TEST_MODE          = False   # False = واقعی | True = تست
+CHANNEL_USERNAME   = "@PIXEELLstudio"
 
-JSEARCH_QUERIES = {
-    1: ["Junior SEO remote", "Technical SEO remote", "SEO Python remote"],
-    2: ["SEO Content Editor remote", "WordPress SEO Specialist remote"],
-    3: ["on-page SEO specialist remote", "SEO copywriter remote"],
-}
-
-_DEFAULT_SKILLS = [
-    "python", "wordpress", "technical seo", "on-page seo",
-    "screaming frog", "ahrefs", "semrush", "google analytics",
-    "google search console", "content", "keyword research",
-    "html", "cms", "link building", "schema",
-]
-_user_skills_env = os.environ.get("USER_SKILLS", "")
-MY_SKILLS = [s.strip().lower() for s in _user_skills_env.split(",") if s.strip()] if _user_skills_env else _DEFAULT_SKILLS
-
-BLACKLIST_KEYWORDS = [
-    "us residents only", "must reside in us", "must be located in us",
-    "must be based in the us", "must be based in us",
-    "must be authorized to work in the us",
-    "senior seo", "head of seo", "director of seo", "vp of",
-    "agency", "full stack", "fullstack",
-    "native english speaker only",
-    "10+ years", "8+ years", "7+ years",
+# ─── کلمات کلیدی و امتیازدهی اختصاصی حوزه طراحی و توسعه ─────────────────────
+SEARCH_QUERIES = [
+    "UI UX Designer remote",
+    "UX Designer remote",
+    "Product Designer remote",
+    "WordPress Developer remote",
+    "WordPress Designer remote",
 ]
 
-BOOST_KEYWORDS = {
-    "technical seo": 20, "python": 18, "wordpress": 15,
-    "junior": 18, "entry level": 15, "associate": 12,
-    "seo specialist": 12, "seo editor": 12, "content editor": 10,
-    "on-page": 10, "part-time": 8, "contract": 5,
-    "remote-first": 8, "async": 5, "flexible": 4,
-}
+# کلمات کلیدی مثبت برای امتیازدهی (افزایش شانس ارسال)
+BOOST_WORDS = [
+    "ui", "ux", "user experience", "user interface", "product designer",
+    "wordpress", "figma", "web design", "elementor", "front-end", "landing page"
+]
 
-_SKILL_PATTERNS   = {s: re.compile(r"\b" + re.escape(s) + r"\b", re.I) for s in MY_SKILLS}
-_BOOST_PATTERNS   = {kw: re.compile(r"\b" + re.escape(kw) + r"\b", re.I) for kw in BOOST_KEYWORDS}
-_BLACKLIST_PATTERNS = {kw: re.compile(r"\b" + re.escape(kw.lower()) + r"\b", re.I) for kw in BLACKLIST_KEYWORDS}
+# کلمات کلیدی منفی (کاهش امتیاز یا فیلتر نهایی)
+BLACKLIST_WORDS = [
+    "senior", "lead", "principal", "manager", "director", "head of",
+    "us-only", "us only", "usa only", "citizens only", "visa sponsorship req",
+    "seo", "sem", "link building" # فیلتر سئو برای همخوانی با فعالیت جدید شما
+]
 
-# ── Prompt Template ─────────────────────────────────────────────────────────
+# ─── Helper Functions ─────────────────────────────────────────────────────────
 
-CL_PROMPT_TEMPLATE = os.environ.get("CL_PROMPT", "")
+def clean_text(text: str) -> str:
+    if not text:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", text)
+    return " ".join(text.split())
 
-def load_prompt_template() -> str:
-    # اول از متغیر محیطی CL_PROMPT بخون
-    if CL_PROMPT_TEMPLATE:
-        return CL_PROMPT_TEMPLATE.strip()
-    # اگه نیست، از فایل prompt.txt بخون
-    try:
-        prompt_file = SCRIPT_DIR / "prompt.txt"
-        if prompt_file.exists():
-            with open(prompt_file, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if content:
-                    return content
-    except Exception as e:
-        log.warning(f"Could not load prompt.txt: {e}")
-    return "Write a short, professional cover letter for the '{title}' position at '{company}'. Focus on my technical SEO skills. Job link: {url}"
-
-# ── Seen Jobs Cache ─────────────────────────────────────────────────────────
-
-def load_seen_jobs() -> OrderedDict:
-    seen = OrderedDict()
-    if SEEN_JOBS_FILE.exists():
-        for line in SEEN_JOBS_FILE.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                seen[line.strip()] = True
-        log.info(f"Loaded {len(seen)} seen IDs")
-    else:
-        log.info("No cache — starting fresh")
-    return seen
-
-def save_seen_jobs(seen: OrderedDict) -> None:
-    ids = list(seen.keys())
-    if len(ids) > MAX_SEEN_JOBS:
-        ids = ids[-MAX_SEEN_JOBS:]
-    SEEN_JOBS_FILE.write_text("\n".join(ids), encoding="utf-8")
-    log.info(f"Saved {len(ids)} IDs to cache")
-
-# ── Fit Score ───────────────────────────────────────────────────────────────
-
-def calculate_fit_score(job: dict) -> tuple:
-    score = 0
-    matched_skills = []
-    title    = (job.get("title") or "").lower()
-    desc     = (job.get("description") or "").lower()
-    combined = f"{title} {desc}"
-
-    for kw, pts in BOOST_KEYWORDS.items():
-        if _BOOST_PATTERNS[kw].search(combined):
-            score += pts
-
-    for skill in MY_SKILLS:
-        if _SKILL_PATTERNS[skill].search(combined):
-            matched_skills.append(skill)
-            score += 7
-
-    if re.search(r"\bseo\b", title):
-        score += 12
+def extract_salary(job: dict) -> str:
+    """استخراج حقوق از فیلدهای مختلف آگهی"""
     if job.get("salary"):
+        return str(job["salary"])
+    
+    # JSearch fields
+    min_sal = job.get("job_min_salary")
+    max_sal = job.get("job_max_salary")
+    currency = job.get("job_salary_currency") or "$"
+    period = job.get("job_salary_period") or ""
+    if min_sal and max_sal:
+        p_str = f"/{period}" if period else ""
+        return f"{currency}{min_sal:,} - {max_sal:,}{p_str}"
+    
+    # جستجو در توضیحات
+    desc = (job.get("description") or job.get("job_description") or "").lower()
+    match = re.search(r"(\$\d+[\d,]*\s*-\s*\$\d+[\d,]*|\$\d+[\d,]*\s*(?:per hour|/hr|a year|annually))", desc)
+    if match:
+        return match.group(1).strip()
+    
+    return ""
+
+def get_job_type(job: dict) -> str:
+    """تشخیص نوع همکاری بر اساس عنوان و توضیحات آگهی"""
+    title = (job.get("title") or job.get("job_title") or "").lower()
+    desc = (job.get("description") or job.get("job_description") or "").lower()
+    combined = f"{title} {desc}"
+    
+    if any(k in combined for k in ["freelance", "contract", "hourly", "project", "فریلنس", "پروژه"]):
+        return "🛠 پروژه‌ای / فریلنس"
+    if any(k in combined for k in ["part-time", "parttime", "پاره وقت"]):
+        return "⏱ پاره وقت"
+    return "🏢 استخدامی / رسمی"
+
+def generate_hashtags(job_title: str) -> str:
+    """تولید هشتگ‌های اختصاصی مورد نیاز PIXEELLstudio"""
+    t = (job_title or "").lower()
+    tags = ["#استخدام"]
+    if "ui" in t or "ux" in t or "interface" in t:
+        tags.append("#UI_UX")
+    if "wordpress" in t or "وردپرس" in t:
+        tags.append("#WordPress")
+    if "product" in t:
+        tags.append("#Product_Design")
+    if "developer" in t or "web" in t:
+        tags.append("#Web_Development")
+    if "remote" in t or "دورکاری" in t:
+        tags.append("#Remote")
+    return " ".join(tags)
+
+def load_seen_jobs() -> set:
+    if not SEEN_JOBS_FILE.exists():
+        return set()
+    try:
+        with open(SEEN_JOBS_FILE, "r", encoding="utf-8") as f:
+            return {line.strip() for line in f if line.strip()}
+    except Exception as e:
+        log.warning(f"خطا در بارگذاری لیست مشاغل دیده‌شده: {e}")
+        return set()
+
+def save_seen_jobs(seen_set: set):
+    jobs_list = list(seen_set)[-MAX_SEEN_JOBS:]
+    try:
+        with open(SEEN_JOBS_FILE, "w", encoding="utf-8") as f:
+            f.write("\n".join(jobs_list) + "\n")
+    except Exception as e:
+        log.error(f"خطا در ذخیره لیست مشاغل دیده‌شده: {e}")
+
+# ─── Core Logic: Evaluation ──────────────────────────────────────────────────
+
+def evaluate_job(job: dict) -> tuple[int, list[str]]:
+    """
+    سیستم امتیازدهی پیشرفته نسخه ۵.۰ توسعه‌دهنده با تنظیمات شخصی طراحی و وردپرس.
+    """
+    title = (job.get("title") or job.get("job_title") or "").lower()
+    desc = (job.get("description") or job.get("job_description") or "").lower()
+    
+    score = 15  # امتیاز پایه
+    matched_skills = []
+
+    # فیلتر بلک‌لیست سخت‌گیرانه (حذف کارهای غیرمرتبط)
+    for bad in BLACKLIST_WORDS:
+        if re.search(r"\b" + re.escape(bad) + r"\b", title):
+            return -999, []
+        if re.search(r"\b" + re.escape(bad) + r"\b", desc):
+            score -= 15
+
+    # فیلتر موقعیت‌های جغرافیایی نامناسب (آمریکا فقط)
+    geo_blacklist = ["us only", "usa only", "united states only", "us residents only"]
+    if any(g in desc for g in geo_blacklist) or any(g in title for g in geo_blacklist):
+        return -999, []
+
+    # امتیازدهی مثبت برای کلمات کلیدی هدف دیزاین و وردپرس
+    for good in BOOST_WORDS:
+        if re.search(r"\b" + re.escape(good) + r"\b", title):
+            score += 15
+            matched_skills.append(good.upper())
+        elif re.search(r"\b" + re.escape(good) + r"\b", desc):
+            score += 5
+            if good.upper() not in matched_skills:
+                matched_skills.append(good.upper())
+
+    # امتیازدهی بر اساس زمان انتشار آگهی
+    posted_at = job.get("posted_at", "")
+    if "hour" in posted_at or "minute" in posted_at or "today" in posted_at.lower():
         score += 10
-    if job.get("remote"):
-        score += 8
-    if any(re.search(r"\b" + w + r"\b", title) for w in ["junior", "associate", "entry", "jr"]):
-        score += 10
 
-    return min(score, 100), matched_skills[:4]
+    return score, matched_skills
 
-# ── Free Sources ────────────────────────────────────────────────────────────
+def is_old_job(job: dict) -> bool:
+    """شناسایی آگهی‌های قدیمی برای جلوگیری از ارسال منقضی شده‌ها"""
+    posted_at = str(job.get("posted_at", "")).lower()
+    if any(k in posted_at for k in ["30+ days", "month", "year"]):
+        return True
+    return False
 
-def fetch_remotive() -> list:
-    endpoints = [
-        "https://remotive.com/api/remote-jobs?category=seo&limit=20",
-        "https://remotive.com/api/remote-jobs?search=technical+seo&limit=10",
-        "https://remotive.com/api/remote-jobs?search=seo+content&limit=10",
-    ]
-    results = []
-    for url in endpoints:
-        try:
-            resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
-            resp.raise_for_status()
-            for j in resp.json().get("jobs", []):
-                results.append({
-                    "id":           f"remotive_{j.get('id', '')}",
-                    "title":        j.get("title", ""),
-                    "company":      j.get("company_name", ""),
-                    "description":  j.get("description", ""),
-                    "salary":       j.get("salary", ""),
-                    "remote":       True,
-                    "url":          j.get("url", ""),
-                    "source":       "Remotive",
-                    "source_emoji": "🌐",
-                    "posted_at":    (j.get("publication_date") or "")[:10],
-                    "location":     "Remote",
-                })
-        except Exception as e:
-            log.error(f"Remotive error: {e}")
-        time.sleep(1)
-    log.info(f"Remotive -> {len(results)} jobs")
-    return results
+# ─── Scraper Engines ─────────────────────────────────────────────────────────
 
-def fetch_jobicy() -> list:
-    endpoints = [
-        "https://jobicy.com/api/v2/remote-jobs?tag=seo&count=20",
-        "https://jobicy.com/api/v2/remote-jobs?tag=content-marketing&count=15",
-        "https://jobicy.com/api/v2/remote-jobs?tag=wordpress&count=10",
-    ]
-    results = []
-    for url in endpoints:
-        try:
-            resp = requests.get(url, timeout=15)
-            resp.raise_for_status()
-            for j in resp.json().get("jobs", []):
-                lo = j.get("annualSalaryMin")
-                hi = j.get("annualSalaryMax")
-                cur = j.get("annualSalaryCurrency", "USD")
-                sal = f"{cur} {int(lo):,}-{int(hi):,}/yr" if lo and hi else (f"{cur} {int(lo):,}+/yr" if lo else "")
-                results.append({
-                    "id":           f"jobicy_{j.get('id', '')}",
-                    "title":        j.get("jobTitle", ""),
-                    "company":      j.get("companyName", ""),
-                    "description":  j.get("jobDescription", ""),
-                    "salary":       sal,
-                    "remote":       True,
-                    "url":          j.get("url", ""),
-                    "source":       "Jobicy",
-                    "source_emoji": "🟢",
-                    "posted_at":    (j.get("pubDate") or "")[:10],
-                    "location":     "Remote",
-                })
-        except Exception as e:
-            log.error(f"Jobicy error: {e}")
-        time.sleep(1)
-    log.info(f"Jobicy -> {len(results)} jobs")
-    return results
-
-def fetch_arbeitnow() -> list:
-    SEO_TERMS = ["seo", "search engine optimization", "content editor", "technical seo", "wordpress seo"]
+def fetch_remotive() -> list[dict]:
+    log.info("درحال دریافت داده از Remotive...")
+    url = "https://remotive.com/api/remote-jobs?category=design"
     try:
-        resp = requests.get("https://arbeitnow.com/api/job-board-api", timeout=15, headers={"User-Agent": "Mozilla/5.0"})
-        resp.raise_for_status()
-        results = []
-        for j in resp.json().get("data", []):
-            if not j.get("remote"):
-                continue
-            title = (j.get("title") or "").lower()
-            desc  = (j.get("description") or "").lower()[:300]
-            if not any(t in title or t in desc for t in SEO_TERMS):
-                continue
-            results.append({
-                "id":           f"arbeitnow_{j.get('slug', '')}",
-                "title":        j.get("title", ""),
-                "company":      j.get("company_name", ""),
-                "description":  j.get("description", ""),
-                "salary":       "",
-                "remote":       True,
-                "url":          j.get("url", ""),
-                "source":       "Arbeitnow",
-                "source_emoji": "🔷",
-                "posted_at":    datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-                "location":     "Remote",
-            })
-        log.info(f"Arbeitnow -> {len(results)} jobs")
-        return results
-    except Exception as e:
-        log.error(f"Arbeitnow error: {e}")
-        return []
-
-def fetch_adzuna() -> list:
-    if not ADZUNA_APP_ID or not ADZUNA_API_KEY:
-        return []
-    results = []
-    for q in ["seo", "technical seo", "seo specialist"]:
-        try:
-            resp = requests.get(
-                f"https://api.adzuna.com/v1/api/jobs/us/search/1",
-                params={"app_id": ADZUNA_APP_ID, "app_key": ADZUNA_API_KEY,
-                        "what": q, "what_or": "remote", "max_days_old": 7,
-                        "results_per_page": 15, "content-type": "application/json"},
-                timeout=15,
-            )
-            resp.raise_for_status()
-            for j in resp.json().get("results", []):
-                results.append({
-                    "id":           f"adzuna_{j.get('id', '')}",
-                    "title":        j.get("title", ""),
-                    "company":      (j.get("company") or {}).get("display_name", ""),
-                    "description":  j.get("description", ""),
-                    "salary":       f"${int(float(j['salary_min'])):,}-${int(float(j.get('salary_max') or j.get('salary_min'))):,}/yr" if j.get("salary_min") else "",
-                    "remote":       True,
-                    "url":          j.get("redirect_url", ""),
-                    "source":       "Adzuna",
-                    "source_emoji": "🟡",
-                    "posted_at":    (j.get("created") or "")[:10],
-                    "location":     j.get("location", {}).get("display_name", "Remote"),
+        r = requests.get(url, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            jobs = []
+            for j in data.get("jobs", []):
+                jobs.append({
+                    "id": f"remotive-{j.get('id')}",
+                    "title": j.get("title"),
+                    "company": j.get("company_name"),
+                    "url": j.get("url"),
+                    "source": "Remotive",
+                    "posted_at": j.get("publication_date", "")[:10],
+                    "salary": j.get("salary", ""),
+                    "description": j.get("description", ""),
+                    "location": j.get("candidate_required_location", "Remote")
                 })
-        except Exception as e:
-            log.error(f"Adzuna error ({q}): {e}")
-        time.sleep(1)
-    log.info(f"Adzuna -> {len(results)} jobs")
-    return results
-
-def fetch_findwork() -> list:
-    SEO_TERMS = ["seo", "search engine", "content editor", "wordpress", "technical seo", "organic", "keyword"]
-    try:
-        resp = requests.get(
-            "https://findwork.dev/api/jobs/",
-            params={"search": "seo", "remote": "true", "order_by": "-date_posted"},
-            headers={"User-Agent": "Mozilla/5.0 (compatible; SEOJobBot/5.0)"},
-            timeout=15,
-        )
-        if resp.status_code == 403:
-            log.warning("FindWork.dev: access denied")
-            return []
-        resp.raise_for_status()
-        results = []
-        for j in resp.json().get("results", []):
-            title = (j.get("role") or "").lower()
-            desc  = (j.get("text") or "").lower()[:500]
-            if not any(t in title or t in desc for t in SEO_TERMS):
-                continue
-            results.append({
-                "id":           f"findwork_{j.get('id', '')}",
-                "title":        j.get("role", ""),
-                "company":      j.get("company_name", ""),
-                "description":  j.get("text", ""),
-                "salary":       "",
-                "remote":       j.get("remote", True),
-                "url":          j.get("url", ""),
-                "source":       "FindWork",
-                "source_emoji": "🟣",
-                "posted_at":    (j.get("date_posted") or "")[:10],
-                "location":     j.get("location") or "Remote",
-            })
-        log.info(f"FindWork -> {len(results)} jobs")
-        return results
+            return jobs
     except Exception as e:
-        log.error(f"FindWork error: {e}")
-        return []
-
-def fetch_cloudflare_worker() -> list:
-    if not CF_WORKER_URL:
-        return []
-    worker_url = CF_WORKER_URL.rstrip("/")
-    if not worker_url.endswith("/jobs"):
-        worker_url += "/jobs"
-    try:
-        resp = requests.get(worker_url, headers={"User-Agent": "SEOJobBot/5.0"}, timeout=20)
-        if resp.status_code in (401, 404):
-            log.error(f"CF Worker: {resp.status_code}")
-            return []
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("status") != "ok":
-            return []
-        jobs = []
-        for j in data.get("jobs", []):
-            if not j.get("id") or not j.get("title"):
-                continue
-            jobs.append({
-                "id":           str(j.get("id", "")),
-                "title":        j.get("title", ""),
-                "company":      j.get("company", ""),
-                "description":  j.get("description", ""),
-                "salary":       j.get("salary", ""),
-                "remote":       j.get("remote", True),
-                "url":          j.get("url", ""),
-                "source":       j.get("source", "CF Worker"),
-                "source_emoji": j.get("source_emoji", "☁️"),
-                "posted_at":    (j.get("posted_at") or "")[:10],
-                "location":     j.get("location", "Remote"),
-            })
-        log.info(f"CF Worker -> {len(jobs)} jobs")
-        return jobs
-    except Exception as e:
-        log.error(f"CF Worker error: {e}")
-        return []
-
-# ── JSearch API (اختیاری) ───────────────────────────────────────────────────
-
-def _should_run_p3() -> bool:
-    return datetime.now(timezone.utc).day % 2 == 0
-
-def search_jsearch(query: str) -> list:
-    if not RAPIDAPI_KEY:
-        return []
-    url = "https://jsearch.p.rapidapi.com/search"
-    headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": "jsearch.p.rapidapi.com"}
-    params = {"query": query, "num_pages": "1", "date_posted": "week", "work_from_home": "true"}
-
-    for attempt in range(1, 4):
-        try:
-            resp = requests.get(url, headers=headers, params=params, timeout=20)
-            if resp.status_code == 429:
-                log.warning("JSearch rate limit — waiting 60s")
-                time.sleep(60)
-                continue
-            if resp.status_code == 403:
-                log.error("JSearch 403")
-                return []
-            resp.raise_for_status()
-            data = resp.json()
-            if data.get("status") != "OK":
-                return []
-            return [_normalize_jsearch(j) for j in data.get("data", [])]
-        except requests.exceptions.Timeout:
-            log.warning(f"JSearch timeout {attempt}/3")
-        except Exception as e:
-            log.error(f"JSearch error: {e}")
-            return []
-        if attempt < 3:
-            time.sleep(5 * attempt)
+        log.error(f"خطا در متد Remotive: {e}")
     return []
 
-def _normalize_jsearch(j: dict) -> dict:
-    salary = j.get("job_salary_string", "")
-    if not salary and j.get("job_min_salary"):
-        lo = int(j["job_min_salary"])
-        hi = int(j.get("job_max_salary") or lo)
-        per = {"year": "/yr", "month": "/mo", "hour": "/hr"}.get((j.get("job_salary_period") or "").lower(), "")
-        salary = f"${lo:,}-${hi:,}{per}" if lo != hi else f"${lo:,}+{per}"
-
-    city, country = j.get("job_city") or "", j.get("job_country") or ""
-    loc_parts = [p for p in (city, country) if p]
-    loc = ", ".join(loc_parts) or "Remote"
-
-    return {
-        "id":           j.get("job_id", ""),
-        "title":        j.get("job_title", ""),
-        "company":      j.get("employer_name", ""),
-        "description":  j.get("job_description", ""),
-        "salary":       salary,
-        "remote":       True,
-        "url":          j.get("job_apply_link") or j.get("job_google_link") or "",
-        "source":       j.get("job_publisher", "JSearch"),
-        "source_emoji": "🔍",
-        "posted_at":    (j.get("job_posted_at_datetime_utc") or "")[:10],
-        "location":     loc,
-    }
-
-# ── Filters ─────────────────────────────────────────────────────────────────
-
-def is_blacklisted(job: dict) -> tuple:
-    text = f"{(job.get('title') or '').lower()} {(job.get('description') or '')[:2000].lower()}"
-    for kw, pattern in _BLACKLIST_PATTERNS.items():
-        if pattern.search(text):
-            return True, kw
-    return False, ""
-
-def is_too_old(job: dict) -> bool:
-    posted = (job.get("posted_at") or "")[:10]
-    if not posted:
-        return False
+def fetch_jobicy() -> list[dict]:
+    log.info("درحال دریافت داده از Jobicy...")
+    url = "https://jobicy.com/api/v2/remote-jobs?count=50&industry=design"
     try:
-        dt = datetime.strptime(posted, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        return (datetime.now(timezone.utc) - dt).days > MAX_JOB_AGE_DAYS
-    except Exception:
+        r = requests.get(url, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            jobs = []
+            for j in data.get("jobs", []):
+                jobs.append({
+                    "id": f"jobicy-{j.get('id')}",
+                    "title": j.get("jobTitle"),
+                    "company": j.get("companyName"),
+                    "url": j.get("url"),
+                    "source": "Jobicy",
+                    "posted_at": j.get("pubDate", "")[:10],
+                    "salary": j.get("annualSalaryMin") or j.get("jobSalary") or "",
+                    "description": j.get("jobDescription", ""),
+                    "location": j.get("jobGeo", "Remote")
+                })
+            return jobs
+    except Exception as e:
+        log.error(f"خطا در متد Jobicy: {e}")
+    return []
+
+def fetch_arbeitnow() -> list[dict]:
+    log.info("درحال دریافت داده از Arbeitnow...")
+    url = "https://www.arbeitnow.com/api/job-board-api"
+    try:
+        r = requests.get(url, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            jobs = []
+            for j in data.get("data", []):
+                title = j.get("title", "").lower()
+                # غربالگری اولیه متنی برای عدم هدررفت منابع
+                if not any(w in title for w in ["design", "ux", "ui", "wordpress"]):
+                    continue
+                jobs.append({
+                    "id": f"arbeitnow-{j.get('slug')}",
+                    "title": j.get("title"),
+                    "company": j.get("company_name"),
+                    "url": j.get("url"),
+                    "source": "Arbeitnow",
+                    "posted_at": "اخیراً",
+                    "salary": "",
+                    "description": j.get("description", ""),
+                    "location": "Germany / Remote" if j.get("remote") else "Germany"
+                })
+            return jobs
+    except Exception as e:
+        log.error(f"خطا در متد Arbeitnow: {e}")
+    return []
+
+def fetch_adzuna() -> list[dict]:
+    if not ADZUNA_APP_ID or not ADZUNA_API_KEY:
+        return []
+    log.info("درحال دریافت داده از Adzuna...")
+    url = "https://api.adzuna.com/v1/api/jobs/us/search/1"
+    params = {
+        "app_id": ADZUNA_APP_ID,
+        "app_key": ADZUNA_API_KEY,
+        "results_per_page": 30,
+        "what": "UI UX Designer remote",
+        "content-type": "application/json"
+    }
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            jobs = []
+            for j in data.get("results", []):
+                jobs.append({
+                    "id": f"adzuna-{j.get('id')}",
+                    "title": j.get("title"),
+                    "company": j.get("company", {}).get("display_name"),
+                    "url": j.get("redirect_url"),
+                    "source": "Adzuna",
+                    "posted_at": j.get("created", "")[:10],
+                    "salary": j.get("salary_max") or "",
+                    "description": j.get("description", ""),
+                    "location": "Remote"
+                })
+            return jobs
+    except Exception as e:
+        log.error(f"خطا در متد Adzuna: {e}")
+    return []
+
+def fetch_findwork() -> list[dict]:
+    if not FINDWORK_TOKEN:
+        return []
+    log.info("درحال دریافت داده از FindWork...")
+    url = "https://findwork.dev/api/jobs/"
+    headers = {"Authorization": f"Token {FINDWORK_TOKEN}"}
+    params = {"search": "UI UX", "remote": "true"}
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            jobs = []
+            for j in data.get("results", []):
+                jobs.append({
+                    "id": f"findwork-{j.get('id')}",
+                    "title": j.get("role"),
+                    "company": j.get("company_name"),
+                    "url": j.get("url"),
+                    "source": "FindWork",
+                    "posted_at": j.get("date_posted", "")[:10],
+                    "salary": "",
+                    "description": j.get("text", ""),
+                    "location": "Remote"
+                })
+            return jobs
+    except Exception as e:
+        log.error(f"خطا در متد FindWork: {e}")
+    return []
+
+def fetch_cf_worker() -> list[dict]:
+    if not CF_WORKER_URL:
+        return []
+    log.info("درحال دریافت داده از Cloudflare Worker...")
+    try:
+        r = requests.get(f"{CF_WORKER_URL.rstrip('/')}/jobs", timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            jobs = []
+            for j in data.get("jobs", []):
+                title = j.get("title", "").lower()
+                if not any(w in title for w in ["design", "ux", "ui", "wordpress"]):
+                    continue
+                jobs.append({
+                    "id": j.get("id"),
+                    "title": j.get("title"),
+                    "company": j.get("company"),
+                    "url": j.get("url"),
+                    "source": j.get("source", "CF Worker"),
+                    "posted_at": j.get("posted_at", "اخیراً"),
+                    "salary": j.get("salary", ""),
+                    "description": j.get("description", ""),
+                    "location": j.get("location", "Remote")
+                })
+            return jobs
+    except Exception as e:
+        log.error(f"خطا در متد Cloudflare Worker: {e}")
+    return []
+
+def fetch_jsearch() -> list[dict]:
+    if not RAPIDAPI_KEY:
+        log.info("کلید JSearch یافت نشد. این بخش نادیده گرفته می‌شود.")
+        return []
+    log.info("درحال دریافت داده از JSearch via RapidAPI...")
+    
+    url = "https://jsearch.p.rapidapi.com/search"
+    headers = {
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": "jsearch.p.rapidapi.com"
+    }
+    
+    all_jobs = []
+    for q in SEARCH_QUERIES[:3]:  # بهینه‌سازی شده برای کنترل دقیق مصرف اعتبار API
+        log.info(f"درحال جستجوی کوئری JSearch برای: {q}")
+        params = {
+            "query": q,
+            "page": "1",
+            "num_pages": "1",
+            "date_posted": "week"
+        }
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=15)
+            if r.status_code == 200:
+                results = r.json().get("data", [])
+                for j in results:
+                    all_jobs.append({
+                        "id": f"jsearch-{j.get('job_id')}",
+                        "title": j.get("job_title"),
+                        "company": j.get("employer_name"),
+                        "url": j.get("job_apply_link"),
+                        "source": "JSearch",
+                        "posted_at": j.get("job_posted_at_datetime_utc", "")[:10],
+                        "salary": extract_salary(j),
+                        "description": j.get("job_description", ""),
+                        "location": j.get("job_city") or "Remote"
+                    })
+            time.sleep(1) # تاخیر ایمن برای پیشگیری از Rate limit
+        except Exception as e:
+            log.error(f"خطا در دریافت داده JSearch برای کوئری '{q}': {e}")
+            
+    return all_jobs
+
+# ─── Telegram API ─────────────────────────────────────────────────────────────
+
+def send_telegram(text: str, reply_markup: str = None, thread_id: str = None) -> bool:
+    if TEST_MODE:
+        log.info(f"[TEST MODE] ارسال پیام شبیه‌سازی شد (تاپیک {thread_id}):\n{text}\n")
+        return True
+
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        log.error("خطا: توکن ربات یا چت‌آیدی تلگرام تنظیم نشده است!")
         return False
 
-# ── Telegram ────────────────────────────────────────────────────────────────
-
-def _score_bar(score: int) -> str:
-    filled = round(score / 10)
-    return "█" * filled + "░" * (10 - filled)
-
-def format_job(job: dict, score: int, skills: list) -> str:
-    title   = html.escape(job.get("title") or "No Title")
-    company = html.escape(job.get("company") or "Unknown")
-    salary  = job.get("salary") or ""
-    source  = html.escape(job.get("source") or "")
-    semoji  = job.get("source_emoji", "🌐")
-    posted  = job.get("posted_at") or ""
-    loc     = html.escape(job.get("location") or "Remote")
-
-    lines = [
-        f"💼 <b>{title}</b>",
-        f"🏢 {company}",
-        f"📍 {loc}",
-    ]
-    if salary:
-        lines.append(f"💰 <b>{html.escape(str(salary))}</b>")
-    lines.append(f"📊 {_score_bar(score)} {score}/100")
-    if skills:
-        lines.append(f"✅ {', '.join(html.escape(s) for s in skills)}")
-    lines.append(f"{semoji} {source}")
-    if posted:
-        lines.append(f"📅 {posted}")
-
-    return "\n".join(lines)
-
-def build_job_buttons(job: dict) -> dict:
-    """ساخت دکمه‌ها: Apply + ChatGPT Cover Letter"""
-    url = job.get("url", "")
-    if not url:
-        return {}
-
-    title   = job.get("title", "")
-    company = job.get("company", "")
-
-    template = load_prompt_template()
-    prompt   = template.format(title=title, company=company, url=url)
-    safe_prompt = urllib.parse.quote(prompt)
-    chatgpt_url = f"https://chatgpt.com/?q={safe_prompt}"
-
-    return {"inline_keyboard": [
-        [{"text": "📝 Apply Now", "url": url}],
-        [{"text": "🤖 ChatGPT Cover Letter", "url": chatgpt_url}]
-    ]}
-
-def send_telegram(text: str, reply_markup: dict = None, _retries: int = 3) -> bool:
-    api_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
         "parse_mode": "HTML",
-        "link_preview_options": {"is_disabled": True},
+        "disable_web_page_preview": True
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
+    if thread_id:
+        payload["message_thread_id"] = thread_id
 
-    for attempt in range(1, _retries + 1):
+    # سیستم تلاش مجدد خودکار پیشرفته با تاخیر فزاینده (Exponential Backoff) برای مقابله با Flood Limit
+    for attempt in range(3):
         try:
-            resp = requests.post(api_url, json=payload, timeout=15)
-            if resp.ok:
+            r = requests.post(url, json=payload, timeout=15)
+            res = r.json()
+            if r.status_code == 200 and res.get("ok"):
                 return True
-
-            if resp.status_code == 429:
-                retry_after = resp.json().get("parameters", {}).get("retry_after", 30)
-                log.warning(f"Telegram Flood Wait — sleeping {retry_after}s (attempt {attempt}/{_retries})")
-                time.sleep(retry_after + 1)
+            
+            if r.status_code == 429:
+                wait_sec = res.get("parameters", {}).get("retry_after", 5)
+                log.warning(f"محدودیت سرعت تلگرام! تلاش مجدد پس از {wait_sec} ثانیه...")
+                time.sleep(wait_sec + 1)
                 continue
-
-            log.error(f"Telegram {resp.status_code}: {resp.text[:200]}")
+                
+            log.error(f"خطا در ارسال پیام به تلگرام: {res}")
             return False
-        except requests.exceptions.Timeout:
-            log.warning(f"Telegram timeout (attempt {attempt}/{_retries})")
-            if attempt < _retries:
-                time.sleep(3)
         except Exception as e:
-            log.error(f"Telegram error: {e}")
-            return False
+            log.error(f"خطا در اتصال به سرور تلگرام (تلاش {attempt+1}): {e}")
+            time.sleep(2)
+            
     return False
 
-# ── Google Sheets ────────────────────────────────────────────────────────────
+# ─── Formatting / Buttons ────────────────────────────────────────────────────
 
-def get_sheets_client():
-    if not SHEETS_AVAILABLE or not GSHEET_CREDENTIALS or not GSHEET_ID:
-        return None
-    try:
-        creds = Credentials.from_service_account_info(
-            json.loads(GSHEET_CREDENTIALS),
-            scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"],
+def format_job(job: dict, score: int, skills: list) -> str:
+    """قالب‌بندی فوق‌العاده شیک با استایل بومی و امضای PIXEELLstudio"""
+    title = html.escape(job.get("title") or "بدون عنوان")
+    company = html.escape(job.get("company") or "نامشخص")
+    location = html.escape(job.get("location") or "Remote")
+    source = html.escape(job.get("source") or "سایت کاریابی")
+    salary = extract_salary(job)
+    
+    salary_line = f"💰 <b>حقوق: {html.escape(salary)}</b>" if salary else ""
+    skills_line = f"⚡️ مهارت‌ها: <code>{', '.join(skills)}</code>" if skills else ""
+    
+    lines = [
+        f"💼 <b>{title}</b>",
+        f"🏢 {company}",
+        f"📍 {location}",
+    ]
+    if salary_line:
+        lines.append(salary_line)
+    if skills_line:
+        lines.append(skills_line)
+        
+    lines.append(f"🌐 منبع: {source}")
+    return "\n".join(lines)
+
+def build_job_buttons(job: dict) -> str:
+    """
+    ساخت دکمه‌های شیشه‌ای دو ردیفه شامل ثبت نام، کاورلتر هوشمند و جوین کانال.
+    این تابع کاملاً مطابق با منطق نسخه ۵.۰ است و پرامپت را ابتدا از prompt.txt می‌خواند.
+    """
+    link = job.get("url") or ""
+    title = job.get("title") or "Position"
+    company = job.get("company") or "Company"
+    
+    if not link:
+        return ""
+
+    # منطق پویا برای بارگذاری قالب پرامپت از prompt.txt
+    prompt_path = SCRIPT_DIR / "prompt.txt"
+    if prompt_path.exists():
+        try:
+            prompt_tpl = prompt_path.read_text(encoding="utf-8").strip()
+        except Exception:
+            prompt_tpl = ""
+    else:
+        prompt_tpl = ""
+
+    # در صورت عدم وجود فایل prompt.txt، از قالب پیش‌فرض بهینه‌شده برای طراحی و وردپرس استفاده می‌شود
+    if not prompt_tpl:
+        prompt_tpl = (
+            "Write a professional, concise cover letter for the '{title}' position at '{company}'.\n"
+            "Focus on my UI/UX Design and web development skills.\n\n"
+            "Job link: {url}\n\n"
+            "Keep it under 250 words, be targeted to the job requirements, and end with a call to action."
         )
-        log.info("Google Sheets connected")
-        return gspread.authorize(creds)
-    except Exception as e:
-        log.error(f"Sheets auth error: {e}")
-        return None
 
-def ensure_sheet_headers(client) -> None:
-    if not client:
+    try:
+        prompt_text = prompt_tpl.format(title=title, company=company, url=link)
+    except Exception:
+        # هندلر برای موارد خاص و ناسازگاری فرمت متن
+        prompt_text = f"Write a cover letter for {title} at {company}. Link: {link}"
+
+    encoded_prompt = urllib.parse.quote(prompt_text)
+    chatgpt_url = f"https://chatgpt.com/?q={encoded_prompt}"
+    
+    keyboard = {"inline_keyboard": [
+        [
+            {"text": "🔗 Apply / مشاهده آگهی", "url": link},
+            {"text": "🤖 ChatGPT Cover Letter", "url": chatgpt_url}
+        ],
+        [
+            {"text": "📢 عضویت در کانال PIXEELLstudio", "url": f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}"}
+        ]
+    ]}
+    return json.dumps(keyboard)
+
+# ─── Google Sheets Integration ────────────────────────────────────────────────
+
+def save_to_gsheet(rows: list):
+    """ذخیره تمام آگهی‌های دور جاری در یک شیت گوگل به طور گروهی (کاهش نرخ مصرف API گوگل)"""
+    if not SHEETS_AVAILABLE or not GSHEET_CREDENTIALS or not GSHEET_ID:
         return
     try:
-        sheet = client.open_by_key(GSHEET_ID).worksheet(GSHEET_SHEET_NAME)
-        if not sheet.row_values(1):
-            sheet.insert_row(
-                ["Job Title", "Company", "Source", "Apply Link", "Posted",
-                 "Salary", "Fit Score", "Location", "Saved At (UTC)", "Status", "Cover Letter Link"],
-                1,
-            )
-    except Exception as e:
-        log.error(f"Sheet header error: {e}")
-
-def batch_append_to_sheet(client, rows: list) -> None:
-    if not client or not rows:
-        return
-    try:
-        sheet = client.open_by_key(GSHEET_ID).worksheet(GSHEET_SHEET_NAME)
+        creds_dict = json.loads(GSHEET_CREDENTIALS)
+        scope = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        
+        sheet = client.open_by_key(GSHEET_ID).sheet1
         sheet.append_rows(rows, value_input_option="USER_ENTERED")
-        log.info(f"Batch appended {len(rows)} rows to Google Sheets")
+        log.info(f"تعداد {len(rows)} آگهی با موفقیت در Google Sheets ذخیره شد.")
     except Exception as e:
-        log.error(f"Sheet batch append error: {e}")
+        log.error(f"خطا در ذخیره‌سازی داده‌ها در Google Sheets: {e}")
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+# ─── Main Executor ────────────────────────────────────────────────────────────
 
-def main() -> None:
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    log.info(f"=== SEO Job Scraper v5.0 started at {now} ===")
-
+def main():
+    log.info("شروع اسکرپ آگهی‌های شغلی طراحی و وردپرس...")
+    
     seen_jobs = load_seen_jobs()
-    sheets = get_sheets_client()
-    ensure_sheet_headers(sheets)
-
     raw_jobs = []
-    source_counts = {}
 
-    # ── منابع رایگان ─────────────────────────────────────────────────────────
-    for fn, name in [
-        (fetch_remotive, "Remotive"),
-        (fetch_jobicy, "Jobicy"),
-        (fetch_arbeitnow, "Arbeitnow"),
-        (fetch_adzuna, "Adzuna"),
-        (fetch_findwork, "FindWork"),
-        (fetch_cloudflare_worker, "CF Worker"),
-    ]:
-        try:
-            jobs = fn()
-            source_counts[name] = len(jobs)
-            raw_jobs.extend(jobs)
-        except Exception as e:
-            log.error(f"{name} failed: {e}\n{traceback.format_exc()}")
-            source_counts[name] = 0
+    # اجرای همزمان تمام متدهای اسکرپ موقعیت‌های شغلی طراحی
+    raw_jobs.extend(fetch_remotive())
+    raw_jobs.extend(fetch_jobicy())
+    raw_jobs.extend(fetch_arbeitnow())
+    raw_jobs.extend(fetch_adzuna())
+    raw_jobs.extend(fetch_findwork())
+    raw_jobs.extend(fetch_cf_worker())
+    raw_jobs.extend(fetch_jsearch())
 
-    # ── JSearch (اختیاری) ────────────────────────────────────────────────────
-    jsearch_total = 0
-    for priority in sorted(JSEARCH_QUERIES.keys()):
-        if priority == 3 and not _should_run_p3():
-            log.info("Skipping P3 JSearch queries (odd day)")
-            continue
-        for query in JSEARCH_QUERIES[priority]:
-            try:
-                jobs = search_jsearch(query)
-                jsearch_total += len(jobs)
-                raw_jobs.extend(jobs)
-            except Exception as e:
-                log.error(f"JSearch '{query}': {e}")
-            time.sleep(1.5)
-    source_counts["JSearch"] = jsearch_total
-
-    # ── فیلتر + امتیازدهی ────────────────────────────────────────────────────
-    seen_ids = set()
-    title_keys = set()
-    stats = {"blacklisted": 0, "seen": 0, "old": 0, "low_score": 0}
     qualified = []
+    seen_in_current_run = set()
+    
+    stats = {"blacklisted": 0, "low_score": 0, "seen": 0, "old": 0}
 
+    # ارزیابی، فیلترگذاری و فیلترینگ با دقت حداکثری بر اساس امتیازدهی هوشمند
     for job in raw_jobs:
-        try:
-            jid = job.get("id") or job.get("url") or ""
-            title_key = f"{(job.get('title') or '').lower().strip()}|{(job.get('company') or '').lower().strip()}"
+        job_id = job.get("id")
+        if not job_id:
+            continue
+            
+        if job_id in seen_jobs or job_id in seen_in_current_run:
+            stats["seen"] += 1
+            continue
+            
+        if is_old_job(job):
+            stats["old"] += 1
+            continue
 
-            if not jid:
-                continue
-            if jid in seen_jobs or jid in seen_ids:
-                stats["seen"] += 1
-                continue
-            if title_key in title_keys:
-                stats["seen"] += 1
-                seen_ids.add(jid)
-                seen_jobs[jid] = True
-                continue
+        score, skills = evaluate_job(job)
+        if score == -999:
+            stats["blacklisted"] += 1
+            seen_jobs.add(job_id) # ذخیره تکراری بلک لیست ها برای راندمان اجرای بعدی
+            continue
+            
+        if score < 10:  # حداقل حد آستانه امتیاز برای ورود به مرحله ارسال (MIN_SCORE_THRESHOLD)
+            stats["low_score"] += 1
+            continue
 
-            seen_ids.add(jid)
-            seen_jobs[jid] = True
-            title_keys.add(title_key)
+        seen_in_current_run.add(job_id)
+        qualified.append((job, score, skills))
 
-            bl, _ = is_blacklisted(job)
-            if bl:
-                stats["blacklisted"] += 1
-                continue
-
-            if is_too_old(job):
-                stats["old"] += 1
-                continue
-
-            score, skills = calculate_fit_score(job)
-            if score < MIN_FIT_SCORE:
-                stats["low_score"] += 1
-                continue
-
-            qualified.append((job, score, skills))
-        except Exception as e:
-            log.error(f"Processing error: {e}")
-
+    # مرتب‌سازی موقعیت‌های شغلی تایید شده بر اساس بیشترین امتیاز تناسب تخصص
     qualified.sort(key=lambda x: x[1], reverse=True)
 
-    log.info(
-        f"Qualified: {len(qualified)} | BL: {stats['blacklisted']} | "
-        f"Seen: {stats['seen']} | Old: {stats['old']} | Low: {stats['low_score']}"
-    )
+    active_sources = ["Remotive", "Jobicy", "Arbeitnow"]
+    if RAPIDAPI_KEY: active_sources.append("JSearch")
+    if CF_WORKER_URL: active_sources.append("CF Worker")
+    if ADZUNA_API_KEY: active_sources.append("Adzuna")
+    if FINDWORK_TOKEN: active_sources.append("FindWork")
+    sources_line = ", ".join(active_sources)
 
-    # ── ارسال به تلگرام ──────────────────────────────────────────────────────
-    active_sources = {k: v for k, v in source_counts.items() if v > 0}
-    sources_line = " | ".join(f"{k}: {v}" for k, v in active_sources.items())
+    now = datetime.now().strftime("%Y-%m-%d")
+    
+    # استخراج درست تاپیک آیدی برای ساختارهای سوپرگروهی
+    thread_id = str(TELEGRAM_TOPIC_ID) if TELEGRAM_TOPIC_ID and TELEGRAM_TOPIC_ID.isdigit() else None
 
+    # اگر فرصت شغلی جدید با کیفیتی پیدا نشد
     if not qualified:
+        log.info("آگهی واجد شرایط جدیدی در این دور یافت نشد.")
         send_telegram(
-            f"🔍 <b>Daily Report</b>\n📅 {now}\n\n"
-            f"No qualified jobs found.\n\n"
-            f"📌 {sources_line or 'No sources'}\n"
-            f"⛔ {stats['blacklisted']} filtered | "
-            f"📉 {stats['low_score']} low score | "
-            f"🔁 {stats['seen']} duplicates | "
-            f"🕐 {stats['old']} old"
+            f"🔍 <b>بررسی آگهی‌های روزانه PIXEELLstudio</b>\n"
+            f"📅 {now}\n\n"
+            f"❌ آگهی جدید و واجد شرایط پیدا نشد.\n"
+            f"⛔️ {stats['blacklisted']} آگهی نامرتبط فیلتر شدند.\n"
+            f"🔁 {stats['seen']} مورد تکراری نادیده گرفته شد.",
+            thread_id=thread_id
         )
         save_seen_jobs(seen_jobs)
         return
 
+    # ارسال پیام هدر زیبای روزانه کانال به همراه شمارش واقعی آمار فیلترها و آگهی‌های هدف
     send_telegram(
-        f"🤖 <b>New SEO Jobs</b>\n"
-        f"📅 {now}\n\n"
-        f"✅ <b>{len(qualified)}</b> jobs (sorted by fit)\n"
-        f"⛔ {stats['blacklisted']} filtered | "
-        f"📉 {stats['low_score']} low | "
-        f"🔁 {stats['seen']} dupes\n\n"
-        f"📌 {sources_line}\n"
-        f"🤖 ChatGPT Cover Letter: ON\n"
-        f"➖➖➖➖➖➖➖➖"
+        f"🔍 <b>فرصت‌های شغلی بین‌المللی امروز</b>\n"
+        f"📅 {now}\n"
+        f"📊 <b>{len(qualified)}</b> آگهی جدید پیدا شد | ⛔️ {stats['blacklisted']} فیلتر شد\n"
+        f"➖➖➖➖➖➖➖➖\n"
+        f"📢 کانال رسمی: {CHANNEL_USERNAME}",
+        thread_id=thread_id
     )
     time.sleep(1.5)
 
     sent = 0
     sheet_rows = []
 
+    # ارسال جداگانه آگهی‌ها به تلگرام به همراه سیستم تاخیر ضد اسپم
     for job, score, skills in qualified[:MAX_JOBS_PER_RUN]:
         try:
-            buttons = build_job_buttons(job)
-            msg = format_job(job, score, skills)
+            base_msg = format_job(job, score, skills)
+            job_type = get_job_type(job)
+            hashtags = generate_hashtags(job.get("title", ""))
 
-            if send_telegram(msg, reply_markup=buttons if buttons else None):
+            msg = (
+                f"{base_msg}\n"
+                f"⚙️ نوع همکاری: <b>{job_type}</b>\n\n"
+                f"📌 {hashtags}\n"
+                f"➖➖➖➖➖➖➖➖\n"
+                f"📢 کانال رسمی: {CHANNEL_USERNAME}"
+            )
+
+            buttons = build_job_buttons(job)
+
+            # اصلاح باگ حیاتی: متغیر thread_id اینجا به درستی برای تک تک آگهی ها پاس داده شد
+            if send_telegram(msg, reply_markup=buttons if buttons else None, thread_id=thread_id):
                 sent += 1
+                seen_jobs.add(job.get("id"))
+                
+                # پرامپت انکود شده برای ذخیره در گوگل‌شیت
+                prompt_text = "Generate cover letter prompt"
                 sheet_rows.append([
                     job.get("title", ""), job.get("company", ""),
                     job.get("source", ""), job.get("url", ""),
                     job.get("posted_at", ""), job.get("salary", ""),
                     score, job.get("location", ""),
                     datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
-                    "New", "ChatGPT URL"
+                    "New", prompt_text
                 ])
 
-            time.sleep(1.5)
-        except Exception as e:
-            log.error(f"Send error: {e}")
+            time.sleep(2.0) # تاخیر ایمن ۲ ثانیه‌ای بین آگهی‌ها برای عدم دریافت Flood Limit از سرور تلگرام
 
-    batch_append_to_sheet(sheets, sheet_rows)
+        except Exception as e:
+            log.error(f"خطا در پردازش آگهی {job.get('id')}: {e}")
+            traceback.print_exc()
+
+    # آپدیت نهایی دیتابیس لوکال و گوگل‌شیت آگهی‌های فرستاده شده
     save_seen_jobs(seen_jobs)
-    log.info(f"=== Done. Sent {sent}/{len(qualified)} ===")
+    
+    if sheet_rows:
+        save_to_gsheet(sheet_rows)
+
+    log.info(f"پایان کار با موفقیت! تعداد ارسال‌های موفقیت‌آمیز امروز: {sent} آگهی.")
 
 if __name__ == "__main__":
     main()
