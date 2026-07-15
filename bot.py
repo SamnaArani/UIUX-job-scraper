@@ -79,7 +79,7 @@ MAX_JOBS_PER_RUN   = 20
 MIN_FIT_SCORE      = 35      # حداقل امتیاز تناسب برای ارسال آگهی
 MAX_JOB_AGE_DAYS   = 7       # حداکثر سن آگهی به روز
 
-TEST_MODE          = True   # False = واقعی | True = تست
+TEST_MODE          = True    # False = واقعی | True = تست (جهت شبیه‌سازی زیبا در کنسول)
 CHANNEL_USERNAME   = "@PIXEELLstudio"
 
 # هدرهای شبیه‌ساز مرورگر واقعی برای دور زدن سیستم‌های ضداسکرپ و کلودفلر
@@ -154,6 +154,7 @@ DEV_BOOST = {
     "part-time": 8, "contract": 5, "node.js": 12, "tailwind": 8, "api": 8
 }
 
+# SEO_BOOST کلمات کلیدی سئو
 SEO_BOOST = {
     "technical seo": 20, "python": 18, "wordpress": 15, "junior": 18, "entry level": 15,
     "seo specialist": 12, "seo editor": 12, "content editor": 10, "on-page": 10,
@@ -568,7 +569,16 @@ def fetch_jsearch() -> list[dict]:
 
 def send_telegram(text: str, reply_markup: str = None, thread_id: str = None) -> bool:
     if TEST_MODE:
-        log.info(f"[TEST MODE] ارسال پیام شبیه‌سازی شد (تاپیک {thread_id}):\n{text}\n")
+        border = "=" * 60
+        log.info(
+            f"\n{border}\n"
+            f"📢 [TEST MODE] پیام شبیه‌سازی شده تلگرام (تاپیک مقصد: {thread_id or 'عمومی'})\n"
+            f"{border}\n"
+            f"{text}\n"
+            f"{border}\n"
+            f"🔘 دکمه‌های پیوست شده:\n{reply_markup or 'بدون دکمه'}\n"
+            f"{border}\n"
+        )
         return True
 
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
