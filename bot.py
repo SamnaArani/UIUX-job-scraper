@@ -738,6 +738,7 @@ def main():
     
     seen_jobs = load_seen_jobs()
     raw_jobs = []
+    source_counts = {}
 
     # در صورت فعال بودن حالت تست، موتورهای اسکرپ را اجرا نمی‌کنیم تا سهمیه API مصرف نشود
     if TEST_MODE:
@@ -792,15 +793,26 @@ def main():
                     "location": "Remote"
                 }
             ]
+        source_counts = {"MockData": len(raw_jobs)}
     else:
         # اجرای همزمان تمام متدهای اسکرپ با هدرهای مرورگر واقعی در حالت معمولی
-        raw_jobs.extend(fetch_remotive())
-        raw_jobs.extend(fetch_jobicy())
-        raw_jobs.extend(fetch_arbeitnow())
-        raw_jobs.extend(fetch_adzuna())
-        raw_jobs.extend(fetch_findwork())
-        raw_jobs.extend(fetch_cf_worker())
-        raw_jobs.extend(fetch_jsearch())
+        scrapers = [
+            (fetch_remotive, "Remotive"),
+            (fetch_jobicy, "Jobicy"),
+            (fetch_arbeitnow, "Arbeitnow"),
+            (fetch_adzuna, "Adzuna"),
+            (fetch_findwork, "FindWork"),
+            (fetch_cf_worker, "CF Worker"),
+            (fetch_jsearch, "JSearch")
+        ]
+        for fn, name in scrapers:
+            try:
+                jobs = fn()
+                source_counts[name] = len(jobs)
+                raw_jobs.extend(jobs)
+            except Exception as e:
+                log.error(f"خطا در اسکرپر {name}: {e}")
+                source_counts[name] = 0
 
     qualified = []
     seen_in_current_run = set()
@@ -836,12 +848,8 @@ def main():
 
     qualified.sort(key=lambda x: x[1], reverse=True)
 
-    active_sources = ["Remotive", "Jobicy", "Arbeitnow"]
-    if RAPIDAPI_KEY: active_sources.append("JSearch")
-    if CF_WORKER_URL: active_sources.append("CF Worker")
-    if ADZUNA_API_KEY: active_sources.append("Adzuna")
-    if FINDWORK_TOKEN: active_sources.append("FindWork")
-    sources_line = ", ".join(active_sources)
+    active_sources = {k: v for k, v in source_counts.items() if v > 0}
+    sources_line = " | ".join(f"{k}: {v}" for k, v in active_sources.items())
 
     now = datetime.now().strftime("%Y-%m-%d")
     thread_id = str(TELEGRAM_TOPIC_ID) if TELEGRAM_TOPIC_ID and TELEGRAM_TOPIC_ID.isdigit() else None
@@ -852,19 +860,22 @@ def main():
         send_telegram(
             f"🔍 <b>بررسی آگهی‌های روزانه PIXEELLstudio ({CATEGORY.upper()})</b>\n"
             f"📅 {now}\n\n"
-            f"❌ آگهی جدید و واجد شرایط پیدا نشد.\n"
-            f"⛔️ {stats['blacklisted']} آگهی نامرتبط فیلتر شدند.\n"
-            f"🔁 {stats['seen']} مورد تکراری نادیده گرفته شد.",
+            f"❌ آگهی جدید و واجد شرایط در این دور پیدا نشد.\n\n"
+            f"📌 منابع فعال: <code>{sources_line or 'تست آفلاین (شبیه‌ساز)'}</code>\n"
+            f"⛔️ {stats['blacklisted']} فیلتر شده | 📉 {stats['low_score']} امتیاز پایین | 🔁 {stats['seen']} تکراری | 🕐 {stats['old']} قدیمی",
             thread_id=thread_id
         )
         save_seen_jobs(seen_jobs)
         return
 
-    # ارسال هدر روزانه با آمار کاملاً واقعی و موضوع فعالیت
+    # ارسال هدر روزانه با آمار کاملاً واقعی و موضوع فعالیت به سبک نسخه توسعه‌دهنده
     send_telegram(
-        f"🔍 <b>فرصت‌های شغلی بین‌المللی امروز ({CATEGORY.upper()})</b>\n"
-        f"📅 {now}\n"
-        f"📊 <b>{len(qualified)}</b> آگهی جدید پیدا شد | ⛔️ {stats['blacklisted']} فیلتر شد\n"
+        f"🤖 <b>فرصت‌های شغلی جدید ({CATEGORY.upper()})</b>\n"
+        f"📅 {now}\n\n"
+        f"✅ <b>{len(qualified)}</b> آگهی واجد شرایط (بر اساس امتیاز تناسب)\n"
+        f"⛔️ {stats['blacklisted']} فیلتر شده | 📉 {stats['low_score']} امتیاز پایین | 🔁 {stats['seen']} تکراری | 🕐 {stats['old']} قدیمی\n\n"
+        f"📌 منابع فعال: <code>{sources_line or 'تست آفلاین (شبیه‌ساز)'}</code>\n"
+        f"🤖 ابزار ChatGPT Cover Letter: فعال ✅\n"
         f"➖➖➖➖➖➖➖➖\n"
         f"📢 کانال رسمی: {CHANNEL_USERNAME}",
         thread_id=thread_id
