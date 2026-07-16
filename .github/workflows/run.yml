@@ -36,7 +36,8 @@ jobs:
       - name: Restore seen_jobs cache
         uses: actions/cache@v4
         with:
-          path: seen_jobs.txt
+          # تصحیح مسیر فایل متناسب با ساختار خروجی پایتون برای ماتریکس‌های مختلف
+          path: seen_jobs_${{ matrix.category }}.txt
           key: seen-jobs-${{ matrix.category }}-${{ github.run_id }}
           restore-keys: |
             seen-jobs-${{ matrix.category }}-
