@@ -78,7 +78,7 @@ MAX_JOBS_PER_RUN   = 20
 MIN_FIT_SCORE      = 35      # حداقل امتیاز تناسب برای ارسال آگهی
 MAX_JOB_AGE_DAYS   = 7       # حداکثر سن آگهی به روز
 
-TEST_MODE          = True    # True = شبیه‌سازی آفلاین و ارسال مستقیم خروجی‌ها به تلگرام برای تست استایل | False = حالت اسکرپ واقعی وب
+TEST_MODE          = False    # True = شبیه‌سازی آفلاین و ارسال مستقیم خروجی‌ها به تلگرام برای تست استایل | False = حالت اسکرپ واقعی وب
 CHANNEL_USERNAME   = "@PIXEELLstudio"
 
 # هدرهای شبیه‌ساز مرورگر واقعی برای دور زدن سیستم‌های ضداسکرپ و کلودفلر
@@ -485,12 +485,20 @@ def fetch_cf_worker() -> list[dict]:
         return []
     log.info("درحال دریافت داده از Cloudflare Worker...")
     try:
-        r = requests.get(f"{CF_WORKER_URL.rstrip('/')}/jobs", headers=DEFAULT_HEADERS, timeout=15)
+        # ارسال پارامتر دسته‌بندی فعال به ورکر داینامیک جدید
+        params = {"category": CATEGORY}
+        r = requests.get(
+            f"{CF_WORKER_URL.rstrip('/')}/jobs", 
+            params=params, 
+            headers=DEFAULT_HEADERS, 
+            timeout=15
+        )
         if r.status_code == 200:
             data = r.json()
             jobs = []
             for j in data.get("jobs", []):
                 title = j.get("title", "").lower()
+                # غربالگری ثانویه و اطمینان از تطابق محتوا در سمت پایتون
                 match_words = ["design", "ux", "ui", "wordpress"] if CATEGORY != "seo" else ["seo", "marketing"]
                 if CATEGORY == "dev":
                     match_words += ["developer", "react", "php", "javascript"]
