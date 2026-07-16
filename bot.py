@@ -46,7 +46,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ─── تشخیص پویا و آرگومان ورودی موضوع فعالیت ─────────────────────────────────
 # ورودی اول سیستم مشخص می‌کند فرآیند برای کدام دسته است: design | dev | seo (پیش‌فرض design)
 CATEGORY = sys.argv[1].lower() if len(sys.argv) > 1 else "design"
 log.info(f"🚀 ربات در فاز پردازش حوزه تخصصی آغاز به کار کرد: {CATEGORY.upper()}")
@@ -627,33 +626,35 @@ def _score_bar(score: int) -> str:
     return "█" * filled + "░" * (10 - filled)
 
 def format_job(job: dict, score: int, skills: list) -> str:
-    """قالب‌بندی فارسی کارت‌های جاب، به همراه نمودار امتیاز و فهرست مهارت‌های منطبق"""
+    """قالب‌بندی فارسی کارت‌های جاب، به همراه نمودار امتیاز و فهرست مهارت‌های منطبق با فضاسازی باز"""
     title = html.escape(job.get("title") or "بدون عنوان")
     company = html.escape(job.get("company") or "نامشخص")
     location = html.escape(job.get("location") or "Remote")
     source = html.escape(job.get("source") or "سایت کاریابی")
     salary = extract_salary(job)
     
-    salary_line = f"💰 <b>حقوق: {html.escape(salary)}</b>" if salary else ""
+    salary_line = f"💰 <b>حقوق پیشنهادی:</b>\n{html.escape(salary)}" if salary else ""
     score_bar = _score_bar(score)
     
     lines = [
-        f"💼 <b>{title}</b>",
-        f"🏢 {company}",
-        f"📍 {location}",
+        f"💼 <b>عنوان تخصص:</b>\n{title}",
+        f"🏢 <b>نام شرکت:</b>\n{company}",
+        f"📍 <b>موقعیت جغرافیایی:</b>\n{location}",
     ]
     if salary_line:
         lines.append(salary_line)
         
-    # اضافه شدن نمودار امتیاز تناسب
-    lines.append(f"📊 {score_bar} <b>{score}/100</b>")
+    # تنظیم افقی و باز خط امتیازدهی طبق خواسته کاربر
+    lines.append(f"📊 <b>میزان تناسب شایستگی شما:</b>\n{score_bar} {score}/100")
     
-    # اضافه شدن لیست تخصص‌های انطباق‌یافته شما
+    # اضافه شدن مهارت‌های پیدا شده
     if skills:
-        lines.append(f"✅ تخصص‌های منطبق: <code>{', '.join(skills)}</code>")
+        lines.append(f"✅ <b>مهارت‌های ردیابی شده:</b>\n<code>{', '.join(skills)}</code>")
         
-    lines.append(f"🌐 منبع: {source}")
-    return "\n".join(lines)
+    lines.append(f"🌐 <b>منبع انتشار آگهی:</b>\n{source}")
+    
+    # فاصله‌گذاری دو برابری بین آیتم‌ها برای پیشگیری از تداخل چشمی متن‌ها
+    return "\n\n".join(lines)
 
 def build_job_buttons(job: dict) -> tuple[str, str]:
     """ساخت دکمه‌های شیشه‌ای دو ردیفه متناسب با پرامپت اختصاصی هر حوزه"""
@@ -868,14 +869,11 @@ def main():
         save_seen_jobs(seen_jobs)
         return
 
-    # ارسال هدر روزانه با آمار کاملاً واقعی و موضوع فعالیت به سبک نسخه توسعه‌دهنده
+    # ارسال هدر روزانه با قالب بسیار لوکس و تمیز کاملاً مطابق درخواست کاربر
     send_telegram(
-        f"🤖 <b>فرصت‌های شغلی جدید ({CATEGORY.upper()})</b>\n"
+        f"🔍 <b>فرصت‌های شغلی بین‌المللی امروز ({CATEGORY.upper()})</b>\n"
         f"📅 {now}\n\n"
-        f"✅ <b>{len(qualified)}</b> آگهی واجد شرایط (بر اساس امتیاز تناسب)\n"
-        f"⛔️ {stats['blacklisted']} فیلتر شده | 📉 {stats['low_score']} امتیاز پایین | 🔁 {stats['seen']} تکراری | 🕐 {stats['old']} قدیمی\n\n"
-        f"📌 منابع فعال: <code>{sources_line or 'تست آفلاین (شبیه‌ساز)'}</code>\n"
-        f"🤖 ابزار ChatGPT Cover Letter: فعال ✅\n"
+        f"📊 <b>{len(qualified)}</b> آگهی جدید پیدا شد | ⛔️ {stats['blacklisted']} فیلتر شد\n"
         f"➖➖➖➖➖➖➖➖\n"
         f"📢 کانال رسمی: {CHANNEL_USERNAME}",
         thread_id=thread_id
@@ -891,10 +889,11 @@ def main():
             job_type = get_job_type(job)
             hashtags = generate_hashtags(job.get("title", ""))
 
+            # فضاسازی بزرگتر و اعمال فاصله‌های عمودی منظم برای بخش فوتر کارت جاب
             msg = (
-                f"{base_msg}\n"
-                f"⚙️ نوع همکاری: <b>{job_type}</b>\n\n"
-                f"📌 {hashtags}\n"
+                f"{base_msg}\n\n"
+                f"⚙️ <b>نوع همکاری:</b>\n{job_type}\n\n"
+                f"📌 <b>هشتگ‌های مرتبط:</b>\n{hashtags}\n\n"
                 f"➖➖➖➖➖➖➖➖\n"
                 f"📢 کانال رسمی: {CHANNEL_USERNAME}"
             )
