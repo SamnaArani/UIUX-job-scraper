@@ -1,10 +1,10 @@
 """
-UI/UX, Dev & SEO Multi-Topic Job Scraper Bot v5.5 - Premium Unified Edition
+UI/UX, Dev & SEO Multi-Topic Job Scraper Bot v5.6 - Premium Unified Edition
 ================================================================================
 امکانات فوق‌پیشرفته ادغام شده در این نسخه:
   • معماری یکپارچه با ورودی داینامیک موضوعی (Design, Dev, SEO) از طریق سیستم Command Line
   • تفکیک کاملاً مجزای فایل کش دیده‌شده‌ها (seen_jobs_[category].txt) جهت پیشگیری از تداخل
-  • نمودار بصری امتیاز تناسب (Score Bar - ██████░░░░) ادغام شده در پیام فارسی کارت جاب
+  • حذف کامل امتیاز تناسب شخصی برای استفاده عمومی کاربران در گروه/کانال تلگرام
   • نمایش مهارت‌های انطباق‌یافته استخراج شده در کارت جاب تلگرام
   • موتور پیش‌کامپایل شده الگوهای Regex با الگوهای مرز کلمه (\b) برای افزایش ۱۰ برابری سرعت و دقت
   • فیلتر جغرافیایی سخت‌گیرانه برای لوکیشن و توضیحات به طور همزمان
@@ -579,7 +579,6 @@ def send_telegram(text: str, reply_markup: str = None, thread_id: str = None) ->
             f"{border}\n"
         )
         # در حالت تست مود هم می‌خواهیم پیام ارسال شود تا استایل و دیزاین را در تلگرام چک کنیم
-        # بنابراین بلافاصله return True نمی‌کنیم و اجازه می‌دهیم ریکوئست تلگرام فرستاده شود.
 
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         log.error("خطا: توکن ربات یا چت‌آیدی تلگرام تنظیم نشده است!")
@@ -620,36 +619,29 @@ def send_telegram(text: str, reply_markup: str = None, thread_id: str = None) ->
 
 # ─── Formatting / Buttons ────────────────────────────────────────────────────
 
-def _score_bar(score: int) -> str:
-    """نمودار میله‌ای بصری و جذاب امتیاز تناسب آگهی"""
-    filled = round(score / 10)
-    return "█" * filled + "░" * (10 - filled)
-
 def format_job(job: dict, score: int, skills: list) -> str:
-    """قالب‌بندی فارسی کارت‌های جاب، به همراه نمودار امتیاز و فهرست مهارت‌های منطبق با فضاسازی باز"""
+    """
+    قالب‌بندی فارسی شیک و بهینه کارت‌های جاب بدون نمایش امتیاز تناسب شخصی.
+    مناسب جهت انتشار در گروه‌ها و کانال‌های عمومی بدون ایجاد ابهام برای اعضا.
+    """
     title = html.escape(job.get("title") or "بدون عنوان")
     company = html.escape(job.get("company") or "نامشخص")
     location = html.escape(job.get("location") or "Remote")
     source = html.escape(job.get("source") or "سایت کاریابی")
     salary = extract_salary(job)
     
-    salary_line = f"💰 <b>حقوق پیشنهادی:</b>\n{html.escape(salary)}" if salary else ""
-    score_bar = _score_bar(score)
-    
     lines = [
         f"💼 <b>عنوان تخصص:</b>\n{title}",
         f"🏢 <b>نام شرکت:</b>\n{company}",
         f"📍 <b>موقعیت جغرافیایی:</b>\n{location}",
     ]
-    if salary_line:
-        lines.append(salary_line)
-        
-    # تنظیم افقی و باز خط امتیازدهی طبق خواسته کاربر
-    lines.append(f"📊 <b>میزان تناسب شایستگی شما:</b>\n{score_bar} {score}/100")
     
-    # اضافه شدن مهارت‌های پیدا شده
+    if salary:
+        lines.append(f"💰 <b>حقوق پیشنهادی:</b>\n{html.escape(salary)}")
+        
+    # اضافه شدن مهارت‌های پیدا شده به عنوان تخصص‌های مورد نیاز آگهی (نه امتیاز شخصی)
     if skills:
-        lines.append(f"✅ <b>مهارت‌های ردیابی شده:</b>\n<code>{', '.join(skills)}</code>")
+        lines.append(f"⚡️ <b>مهارت‌های مورد نیاز:</b>\n<code>{', '.join(skills)}</code>")
         
     lines.append(f"🌐 <b>منبع انتشار آگهی:</b>\n{source}")
     
