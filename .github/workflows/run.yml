@@ -1,54 +1,66 @@
 name: Job Search Bot 🤖
 
-on:
-  schedule:
-    - cron: "30 3 * * *"   # هر روز ساعت ۷ صبح ایران
-  workflow_dispatch:
+strategy:
+  fail-fast: false # در صورت خطا در یک فیلد (مثلاً سئو)، فیلدهای دیگر به کار خود ادامه می‌دهند
+  matrix:
+    # تعریف پویا برای اجرای ۳ جاب موازی و مجزا به صورت کاملاً تفکیک شده
+    category: [design, dev, seo]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+steps:
+  - name: Checkout Repository
+    uses: actions/checkout@v4
 
-jobs:
-  run-bot:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+  - name: Setup Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: "3.12"
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  - name: Install dependencies
+    run: |
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+  - name: Restore seen_jobs cache
+    uses: actions/cache@v4
+    with:
+      # بازیابی فایل کش دیده‌شده‌های اختصاصی متناسب با ماتریس جاری (تفکیک کامل سوابق آگهی‌ها)
+      path: seen_jobs_${{ matrix.category }}.txt
+      key: seen-jobs-${{ matrix.category }}-${{ github.run_id }}
+      restore-keys: |
+        seen-jobs-${{ matrix.category }}-
 
-      - name: Install deps
-        run: pip install -r requirements.txt
+  - name: Run Bot
+    env:
+      # توکن‌ها و اطلاعات پایه تلگرام
+      TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+      
+      # تاپیک‌های اختصاصی هر بخش در سوپرگروه تلگرام
+      TOPIC_DESIGN:        ${{ secrets.TOPIC_DESIGN }}
+      TOPIC_DEV:           ${{ secrets.TOPIC_DEV }}
+      TOPIC_SEO:           ${{ secrets.TOPIC_SEO }}
+      JOB_TOPIC_ID:        ${{ secrets.JOB_TOPIC_ID }} # فال‌بک عمومی برای پایداری بیشتر
 
-      - name: Restore seen_jobs cache
-        uses: actions/cache@v4
-        with:
-          path: seen_jobs.txt
-          key: seen-jobs-${{ github.run_id }}
-          restore-keys: seen-jobs-
+      # انتخاب هوشمند کلید RapidAPI بر اساس کتگوری با فال‌بک به کلید اصلی در صورت عدم تعریف اختصاصی
+      RAPIDAPI_KEY: >-
+        ${{ (matrix.category == 'design' && secrets.RAPIDAPI_KEY_DESIGN) ||
+            (matrix.category == 'dev' && secrets.RAPIDAPI_KEY_DEVELOP) ||
+            (matrix.category == 'seo' && secrets.RAPIDAPI_KEY_SEO) ||
+            secrets.RAPIDAPI_KEY }}
 
-      - name: Run Bot
-        env:
-          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
-          JOB_TOPIC_ID:        ${{ secrets.JOB_TOPIC_ID }} 
-          RAPIDAPI_KEY:        ${{ secrets.RAPIDAPI_KEY }}
-          GSHEET_CREDENTIALS:  ${{ secrets.GSHEET_CREDENTIALS }}
-          GSHEET_ID:           ${{ secrets.GSHEET_ID }}
-          CF_WORKER_URL:       ${{ secrets.CF_WORKER_URL }}
-          AI_PROVIDER:         ${{ secrets.AI_PROVIDER }}
-          AI_API_KEY:          ${{ secrets.AI_API_KEY }}
-          AI_MODEL:            ${{ secrets.AI_MODEL }}
-          AI_BASE_URL:         ${{ secrets.AI_BASE_URL }}
-          ADZUNA_APP_ID:       ${{ secrets.ADZUNA_APP_ID }}
-          ADZUNA_API_KEY:      ${{ secrets.ADZUNA_API_KEY }}
-          TELEGRAPH_TOKEN:     ${{ secrets.TELEGRAPH_TOKEN }}
-          USER_SKILLS:         ${{ secrets.USER_SKILLS }}
-          USER_RESUME:         ${{ secrets.USER_RESUME }}
-        run: python bot.py
+      # سایر تنظیمات جانبی و اتصال به سرویس‌ها
+      GSHEET_CREDENTIALS:  ${{ secrets.GSHEET_CREDENTIALS }}
+      GSHEET_ID:           ${{ secrets.GSHEET_ID }}
+      CF_WORKER_URL:       ${{ secrets.CF_WORKER_URL }}
+      AI_PROVIDER:         ${{ secrets.AI_PROVIDER }}
+      AI_API_KEY:          ${{ secrets.AI_API_KEY }}
+      AI_MODEL:            ${{ secrets.AI_MODEL }}
+      AI_BASE_URL:         ${{ secrets.AI_BASE_URL }}
+      ADZUNA_APP_ID:       ${{ secrets.ADZUNA_APP_ID }}
+      ADZUNA_API_KEY:      ${{ secrets.ADZUNA_API_KEY }}
+      TELEGRAPH_TOKEN:     ${{ secrets.TELEGRAPH_TOKEN }}
+      USER_SKILLS:         ${{ secrets.USER_SKILLS }}
+      USER_RESUME:         ${{ secrets.USER_RESUME }}
+    
+    # اجرای اسکریپت با آرگومان متناظر با جاب جاری (design / dev / seo) که دقیقاً توسط پایتون پردازش می‌شود
+    run: python bot.py ${{ matrix.category }}
