@@ -1,5 +1,5 @@
 """
-UI/UX, Dev & SEO Multi-Topic Job Scraper Bot v5.6 - Premium Unified Edition
+UI/UX, Dev & SEO Multi-Topic Job Scraper Bot v5.7 - Premium Unified Edition
 ================================================================================
 امکانات فوق‌پیشرفته ادغام شده در این نسخه:
   • معماری یکپارچه با ورودی داینامیک موضوعی (Design, Dev, SEO) از طریق سیستم Command Line
@@ -10,6 +10,7 @@ UI/UX, Dev & SEO Multi-Topic Job Scraper Bot v5.6 - Premium Unified Edition
   • فیلتر جغرافیایی سخت‌گیرانه برای لوکیشن و توضیحات به طور همزمان
   • دکمه‌های شیشه‌ای دو ردیفه (Apply + ChatGPT Cover Letter شخصی‌سازی شده برای هر فیلد + کانال شما)
   • ارسال خروجی‌های تفکیک شده به تاپیک‌های مجزا در سوپرگروه با پایداری حداکثری
+  • اصلاح منطق شناسایی: تولید خودکار شناسه‌های یکتا و پایدار بر اساس URL برای دور زدن آیدی‌های رندوم کلودفلر
 """
 
 import html
@@ -822,9 +823,23 @@ def main():
 
     # ارزیابی بهینه و جدید بر اساس زمان و موقعیت مکانی آگهی
     for job in raw_jobs:
-        job_id = job.get("id")
-        if not job_id:
+        # 💡 اصلاح انقلابی تشخیص همپوشانی تکراری‌ها:
+        # برای غلبه بر باگ آیدی‌های لرزان یا تولید مجدد آیدی رندوم توسط کلودفلر/APIها،
+        # یک کلید ثابت پایدار و منحصربه‌فرد بر اساس لینک ثبت‌نام واقعی آگهی (Apply URL) ایجاد می‌کنیم.
+        # در صورت نبود لینک ثبت‌نام، ترکیب عنوان و شرکت به عنوان شناسه جایگزین هش می‌شود.
+        raw_url = job.get("url") or ""
+        raw_title = (job.get("title") or "").lower().strip()
+        raw_company = (job.get("company") or "").lower().strip()
+        
+        fallback_id = f"{raw_title}_{raw_company}"
+        stable_id = raw_url if raw_url else fallback_id
+        
+        if not stable_id:
             continue
+            
+        # تحمیل شناسه پایدار تولید شده به عنوان ID رسمی جاب برای ذخیره‌سازی در کش تلگرام و گیت‌هاب
+        job["id"] = stable_id
+        job_id = stable_id
             
         if job_id in seen_jobs or job_id in seen_in_current_run:
             stats["seen"] += 1
