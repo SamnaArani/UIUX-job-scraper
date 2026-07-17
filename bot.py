@@ -193,7 +193,10 @@ GEO_BLACKLIST = [
     "us residents only", "must reside in us", "must be located in us",
     "must be based in the us", "must be based in us",
     "must be authorized to work in the us", "citizens only",
-    "native english speaker only", "10+ years", "8+ years", "7+ years"
+    "native english speaker only", "10+ years", "8+ years", "7+ years",
+    "w2 only", "usa only", "canada only", "uk only", "staffing agency", 
+    "recruitment agency", "unpaid", "internship", "volunteer", 
+    "commission only", "fast-paced"
 ]
 
 DESIGN_BLACKLIST = GEO_BLACKLIST + [
@@ -701,7 +704,7 @@ def send_telegram(text: str, reply_markup: str = None, thread_id: str = None) ->
             return False
         except Exception as e:
             log.error(f"خطا در اتصال به سرور تلگرام (تلاش {attempt+1}): {e}")
-            time.sleep(2)
+            time.sleep(3)
             
     return False
 
@@ -1008,7 +1011,7 @@ def main():
                     "New", "ChatGPT URL"
                 ])
 
-            time.sleep(2.0)
+            time.sleep(3.0)
 
         except Exception as e:
             log.error(f"خطا در پردازش آگهی {job.get('id')}: {e}")
