@@ -91,45 +91,104 @@ DEFAULT_HEADERS = {
 
 # ─── تخصیص پویای کیوردها، بلک‌لیست‌ها و سیستم امتیازدهی هوشمند ──────────────
 
-# ۱. تعریف کوئری‌های JSearch به تفکیک و چرخشی برای مدیریت بهینه اعتبار
+# ۱. تعریف کوئری‌های JSearch به تفکیک و چرخشی (۱۵ کوئری طلایی برای هر حوزه بدون ریموت + هدف‌گیری لینکدین)
 DESIGN_QUERIES = {
-    1: ["UI UX Designer remote", "Product Designer remote", "Figma Designer remote"],
-    2: ["WordPress Designer remote", "Elementor remote", "Web Designer remote"],
-    3: ["Front End Designer remote"]
+    1: [
+        "UI UX Designer", 
+        "Product Designer", 
+        "Figma Designer", 
+        "Interaction Designer", 
+        "UI UX Designer linkedin"  # جستجوی تخصصی روی آگهی‌ها و پست‌های لینکدین
+    ],
+    2: [
+        "Web Designer", 
+        "WordPress Designer", 
+        "Elementor Designer", 
+        "Visual Designer", 
+        "Web Designer linkedin"  # جستجوی تخصصی روی آگهی‌ها و پست‌های لینکدین
+    ],
+    3: [
+        "Motion Designer", 
+        "Motion Graphics Designer", 
+        "After Effects Designer", 
+        "3D Animator", 
+        "Motion Graphics linkedin"  # جستجوی تخصصی روی آگهی‌ها و پست‌های لینکدین
+    ]
 }
 
 DEV_QUERIES = {
-    1: ["WordPress Developer remote", "Front End Developer remote", "PHP Developer remote"],
-    2: ["React Developer remote", "Webflow Developer remote", "Shopify Developer remote"],
-    3: ["Full Stack Developer remote", "JavaScript Developer remote"]
+    1: [
+        "WordPress Developer", 
+        "React Developer", 
+        "Front End Developer", 
+        "Webflow Developer", 
+        "WordPress Developer linkedin"  # جستجوی تخصصی روی آگهی‌ها و پست‌های لینکدین
+    ],
+    2: [
+        "JavaScript Developer", 
+        "PHP Developer", 
+        "Full Stack Developer", 
+        "NodeJS Developer", 
+        "Full Stack Developer linkedin"  # جستجوی تخصصی روی آگهی‌ها و پست‌های لینکدین
+    ],
+    3: [
+        "DevOps Engineer", 
+        "SRE Engineer", 
+        "Kubernetes Engineer", 
+        "Data Science Intern", 
+        "DevOps SRE linkedin"  # جستجوی تخصصی روی آگهی‌ها و پست‌های لینکدین
+    ]
 }
 
 SEO_QUERIES = {
-    1: ["Junior SEO remote", "Technical SEO remote", "SEO Python remote"],
-    2: ["SEO Content Editor remote", "WordPress SEO Specialist remote"],
-    3: ["on-page SEO specialist remote", "SEO copywriter remote"]
+    1: [
+        "Technical SEO Specialist", 
+        "SEO Specialist", 
+        "SEO Python Analyst", 
+        "SEO Auditor", 
+        "SEO Specialist linkedin"  # جستجوی تخصصی روی آگهی‌ها و پست‌های لینکدین
+    ],
+    2: [
+        "SEO Content Manager", 
+        "SEO Content Editor", 
+        "SEO Copywriter", 
+        "SEO Writer", 
+        "SEO Content linkedin"  # جستجوی تخصصی روی آگهی‌ها و پست‌های لینکدین
+    ],
+    3: [
+        "SEO Strategist", 
+        "Search Engine Optimization Specialist", 
+        "On-Page SEO Specialist", 
+        "SEO Link Builder", 
+        "SEO Growth Hacker linkedin"  # جستجوی تخصصی روی آگهی‌ها و پست‌های لینکدین
+    ]
 }
 
-# ۲. مهارت‌های پیش‌فرض هر رشته
+
+# ۲. مهارت‌های پیش‌فرض هر رشته (بروزرسانی شده با فیدبک کاربران)
 DESIGN_SKILLS = [
     "figma", "ui", "ux", "user experience", "user interface", "product design",
     "wordpress", "elementor", "web design", "interaction design", "wireframing",
     "prototyping", "html", "css", "webflow", "divi", "landing page", "illustrator",
-    "photoshop", "responsive design"
+    "photoshop", "responsive design", "motion design", "motion graphics", "after effects",
+    "animation", "3d", "blender", "premiere", "cinema 4d"
 ]
 
 DEV_SKILLS = [
     "wordpress", "php", "javascript", "react", "html", "css", "webflow", "shopify",
-    "elementor", "divi", "git", "api", "node.js", "bootstrap", "tailwind", "mysql", "jquery"
+    "elementor", "divi", "git", "api", "node.js", "bootstrap", "tailwind", "mysql", "jquery",
+    "devops", "aws", "kubernetes", "docker", "terraform", "sre", "ci/cd", "python",
+    "data science", "machine learning", "data analysis", "sql"
 ]
 
 SEO_SKILLS = [
     "python", "wordpress", "technical seo", "on-page seo", "screaming frog", "ahrefs",
     "semrush", "google analytics", "google search console", "content", "keyword research",
-    "html", "cms", "link building", "schema"
+    "html", "cms", "link building", "schema", "growth hacking", "digital marketing"
 ]
 
-# ۳. کلمات کلیدی بلک‌لیست عمومی جغرافیایی و کاری
+
+# ۳. کلمات کلیدی بلک‌لیست عمومی جغرافیایی و کاری (پاک‌سازی تداخل‌ها)
 GEO_BLACKLIST = [
     "us residents only", "must reside in us", "must be located in us",
     "must be based in the us", "must be based in us",
@@ -137,28 +196,45 @@ GEO_BLACKLIST = [
     "native english speaker only", "10+ years", "8+ years", "7+ years"
 ]
 
-DESIGN_BLACKLIST = GEO_BLACKLIST + ["senior designer", "lead designer", "design director", "head of design", "seo specialist", "link building"]
-DEV_BLACKLIST    = GEO_BLACKLIST + ["senior developer", "lead developer", "cto", "tech lead", "architect"]
-SEO_BLACKLIST    = GEO_BLACKLIST + ["senior seo", "head of seo", "director of seo"]
+DESIGN_BLACKLIST = GEO_BLACKLIST + [
+    "senior designer", "lead designer", "design director", "head of design", 
+    "developer", "programmer", "engineer", "devops", "seo specialist", "link building"
+]
 
-# ۴. ضرایب و وزن کلمات ارزشمند هر حوزه
+DEV_BLACKLIST = GEO_BLACKLIST + [
+    "senior developer", "lead developer", "cto", "tech lead", "architect", 
+    "ui/ux designer", "graphic designer", "seo specialist"
+]
+
+SEO_BLACKLIST = GEO_BLACKLIST + [
+    "senior seo", "head of seo", "director of seo", 
+    "developer", "programmer", "graphic designer", "ui/ux"
+]
+
+
+# ۴. ضرایب و وزن کلمات ارزشمند هر حوزه (بروزرسانی شده با نقش‌های جدید)
 DESIGN_BOOST = {
     "figma": 20, "ui": 15, "ux": 15, "product designer": 18, "wordpress": 15,
     "elementor": 12, "web design": 10, "junior": 18, "entry level": 15, "associate": 12,
-    "part-time": 8, "contract": 5, "webflow": 12, "wireframing": 8, "prototyping": 8
+    "part-time": 8, "contract": 5, "webflow": 12, "wireframing": 8, "prototyping": 8,
+    "motion design": 18, "motion graphics": 18, "after effects": 15, "animation": 15,
+    "visual designer": 12, "3d": 10, "graphic designer": 8
 }
 
 DEV_BOOST = {
     "wordpress": 20, "react": 18, "php": 15, "webflow": 15, "javascript": 12,
     "html": 10, "css": 10, "junior": 18, "entry level": 15, "associate": 12,
-    "part-time": 8, "contract": 5, "node.js": 12, "tailwind": 8, "api": 8
+    "part-time": 8, "contract": 5, "node.js": 12, "tailwind": 8, "api": 8,
+    "devops": 18, "kubernetes": 18, "aws": 15, "sre": 15, "data science": 15,
+    "intern": 15, "internship": 12, "machine learning": 12
 }
 
 # SEO_BOOST کلمات کلیدی سئو
 SEO_BOOST = {
     "technical seo": 20, "python": 18, "wordpress": 15, "junior": 18, "entry level": 15,
     "seo specialist": 12, "seo editor": 12, "content editor": 10, "on-page": 10,
-    "part-time": 8, "contract": 5, "screaming frog": 12, "ahrefs": 10, "semrush": 10
+    "part-time": 8, "contract": 5, "screaming frog": 12, "ahrefs": 10, "semrush": 10,
+    "seo strategist": 15, "growth hacker": 15, "link builder": 12
 }
 
 # اعمال پیکربندی‌های پویا بر اساس حوزه انتخاب شده در ران تایم
@@ -549,7 +625,10 @@ def fetch_jsearch() -> list[dict]:
             "query": q,
             "page": "1",
             "num_pages": "1",
-            "date_posted": "week"
+            "date_posted": "week",
+            # 💡 اصلاح انقلابی: فعال‌سازی فیلتر رسمی دورکاری در موتور جستجوی JSearch
+            # با این پارامتر، دیگر نیازی به نوشتن کلمه remote در خود کوئری‌ها نیست
+            "remote_jobs_only": "true"
         }
         try:
             r = requests.get(url, headers=headers, params=params, timeout=15)
